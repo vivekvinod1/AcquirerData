@@ -26,17 +26,76 @@ CRITICAL RULES:
 10. Return ONLY the SQL query, no explanation outside it."""
 
 
+def _auto_detect_cib_bin(job: Job) -> dict:
+    """Try to detect CIB/BIN/BID values from reference tables in the uploaded data.
+
+    Looks for tables with 'bin', 'cib', 'bid', 'master', 'processor', 'acquirer'
+    in their name, then scans columns for matching patterns.
+    """
+    import re
+
+    patterns = {
+        "processor_name": re.compile(r"processor.?name|proc.?name|cib.?name", re.I),
+        "processor_bin_cib": re.compile(r"processor.?bin.?cib|processor.?cib|cib$|cib.?id|proc.?cib", re.I),
+        "acquirer_name": re.compile(r"acquirer.?name|acq.?name|bid.?name", re.I),
+        "acquirer_bid": re.compile(r"acquirer.?bid|bid$|bid.?id|acq.?bid|business.?id", re.I),
+        "acquirer_bin": re.compile(r"acquirer.?bin|bin$|bin.?id|acq.?bin|acquiring.?bin", re.I),
+    }
+
+    ref_pat = re.compile(r"bin|cib|bid|master|processor|acquirer|reference|ref", re.I)
+
+    # Search reference-like tables first, then all tables
+    ref_tables = {n: df for n, df in job.tables.items() if ref_pat.search(n)}
+    other_tables = {n: df for n, df in job.tables.items() if n not in ref_tables}
+    search_order = list(ref_tables.items()) + list(other_tables.items())
+
+    detected: dict = {}
+    for field_key, pat in patterns.items():
+        for table_name, df in search_order:
+            for col in df.columns:
+                if pat.search(str(col)):
+                    vals = df[col].dropna()
+                    if len(vals) == 0:
+                        continue
+                    # Pick most common non-empty value
+                    val = vals.astype(str).str.strip()
+                    val = val[val != ""]
+                    if len(val) == 0:
+                        continue
+                    most_common = val.mode().iloc[0] if len(val.mode()) > 0 else val.iloc[0]
+                    # Try to cast numeric fields
+                    if field_key in ("processor_bin_cib", "acquirer_bid", "acquirer_bin"):
+                        try:
+                            detected[field_key] = int(float(most_common))
+                        except (ValueError, TypeError):
+                            detected[field_key] = most_common
+                    else:
+                        detected[field_key] = most_common
+                    break
+            if field_key in detected:
+                break
+
+    return detected
+
+
 async def run_query_generation(job: Job, relationships: dict, max_retries: int = 3) -> str:
     schema_summary = get_schema_summary(job.tables)
     ammf_spec = get_ammf_spec_for_prompt()
 
-    # Get CIB/BIN config
+    # Get CIB/BIN config — user-supplied takes priority, then auto-detect from data
     cib_config = job.cib_bin_config or {}
-    processor_name = cib_config.get("processor_name", "'UNKNOWN'")
-    processor_cib = cib_config.get("processor_bin_cib", 0)
-    acquirer_name = cib_config.get("acquirer_name", "'UNKNOWN'")
-    acquirer_bid = cib_config.get("acquirer_bid", 0)
-    acquirer_bin = cib_config.get("acquirer_bin", 0)
+
+    # Auto-detect from uploaded reference tables if user didn't provide values
+    auto_detected = _auto_detect_cib_bin(job)
+    if auto_detected:
+        job.add_message(f"Auto-detected CIB/BIN values from data: {auto_detected}")
+
+    # Merge: user config overrides auto-detected; auto-detected overrides defaults
+    processor_name = cib_config.get("processor_name") or auto_detected.get("processor_name", "")
+    processor_cib = cib_config.get("processor_bin_cib") or auto_detected.get("processor_bin_cib", 0)
+    acquirer_name = cib_config.get("acquirer_name") or auto_detected.get("acquirer_name", "")
+    acquirer_bid = cib_config.get("acquirer_bid") or auto_detected.get("acquirer_bid", 0)
+    acquirer_bin = cib_config.get("acquirer_bin") or auto_detected.get("acquirer_bin", 0)
 
     # Format schema mapping for context
     mapping_context = ""
@@ -48,6 +107,25 @@ async def run_query_generation(job: Job, relationships: dict, max_retries: int =
             elif m.is_derived:
                 mapping_lines.append(f"  {m.ammf_column} <- DERIVED: {m.derivation_logic}")
         mapping_context = "\n".join(mapping_lines)
+
+    # Build the CIB/BIN instruction block
+    has_values = processor_name or processor_cib or acquirer_name or acquirer_bid or acquirer_bin
+    if has_values:
+        cib_block = f"""PROCESSOR / ACQUIRER VALUES (use these in the generated SQL):
+- ProcessorBINCIB: {processor_cib}
+- ProcessorName: '{processor_name}'
+- AcquirerBID: {acquirer_bid}
+- AcquirerName: '{acquirer_name}'
+- AcquirerBIN: {acquirer_bin}
+
+These values were {'user-configured' if cib_config else 'auto-detected from the reference data'}.
+Use them as constants in the SELECT clause. Do NOT default to 0 or 'UNKNOWN'."""
+    else:
+        cib_block = """PROCESSOR / ACQUIRER VALUES:
+No values were provided or auto-detected. You MUST look for a reference table
+(containing columns like CIB, BIN, BID, ProcessorName, AcquirerName) in the source
+tables listed above. JOIN to it and extract the correct values.
+If absolutely no reference data exists, use NULL (not 0 or 'UNKNOWN')."""
 
     user_prompt = f"""Generate a DuckDB SQL query to transform the source tables into AMMF format.
 
@@ -61,12 +139,7 @@ RELATIONSHIPS:
 {json.dumps(relationships.get('joins', []), indent=2)}
 Main table: {relationships.get('main_table', 'unknown')}
 
-USER-CONFIGURED VALUES:
-- ProcessorBINCIB: {processor_cib}
-- ProcessorName: '{processor_name}'
-- AcquirerBID: {acquirer_bid}
-- AcquirerName: '{acquirer_name}'
-- AcquirerBIN: {acquirer_bin}
+{cib_block}
 
 TARGET FORMAT:
 {ammf_spec}
@@ -74,7 +147,7 @@ TARGET FORMAT:
 OUTPUT COLUMN ORDER (must be exactly this):
 {', '.join(AMMF_COLUMN_NAMES)}
 
-Generate a complete DuckDB SQL query. If there is a bin/CIB reference table available, use it to get the processor/acquirer values (pick one row per merchant or use user-configured constants). Remember: MCC2-MCC9 should be NULL."""
+Generate a complete DuckDB SQL query. If there is a bin/CIB reference table available, use it to get the processor/acquirer values. Do NOT use 0 or 'UNKNOWN' as default values — use the detected/configured values or NULL. Remember: MCC2-MCC9 should be NULL."""
 
     sql = None
     last_error = None

@@ -86,6 +86,17 @@ export interface CIBBINConfig {
   acquirer_bin: number;
 }
 
+export interface ReferenceFieldInfo {
+  source_table: string;
+  source_column: string;
+  values: string[];
+}
+
+export interface ReferenceValues {
+  source_table: string | null;
+  fields: Partial<Record<keyof CIBBINConfig, ReferenceFieldInfo>>;
+}
+
 export interface LLMCallLog {
   call_id: number;
   method: string;

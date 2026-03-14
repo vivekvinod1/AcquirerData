@@ -8,6 +8,7 @@ import type {
   AMMFPreview,
   CIBBINConfig,
   LLMCallSummary,
+  ReferenceValues,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -88,4 +89,8 @@ export async function getGeneratedSQL(jobId: string): Promise<{ sql: string | nu
 
 export async function getLLMLogs(jobId: string): Promise<LLMCallSummary> {
   return fetchAPI<LLMCallSummary>(`/pipeline/llm-logs/${jobId}`);
+}
+
+export async function getReferenceValues(jobId: string): Promise<ReferenceValues> {
+  return fetchAPI<ReferenceValues>(`/pipeline/reference-values/${jobId}`);
 }

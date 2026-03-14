@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import PipelineStepper from "@/components/PipelineStepper";
-import { getPipelineStatus, runPipeline } from "@/lib/api";
-import type { PipelineStatus, CIBBINConfig } from "@/lib/types";
+import { getPipelineStatus, runPipeline, getReferenceValues } from "@/lib/api";
+import type { PipelineStatus, CIBBINConfig, ReferenceValues } from "@/lib/types";
 
 const AVAILABLE_STEPS = [
   { key: "schema_mapping", label: "Schema Mapping", desc: "Map source columns to AMMF format" },
@@ -15,6 +15,66 @@ const AVAILABLE_STEPS = [
   { key: "executing", label: "Execute Query", desc: "Run SQL to produce AMMF output" },
   { key: "validation", label: "Violation Checks", desc: "Run 13 Visa compliance rules" },
 ];
+
+/* ---------- CIB/BIN field: combo dropdown + manual input ---------- */
+function CIBField({
+  label,
+  value,
+  options,
+  sourceInfo,
+  onChange,
+  placeholder,
+  numeric,
+}: {
+  label: string;
+  value: string | number;
+  options?: string[];
+  sourceInfo?: { source_table: string; source_column: string; values: string[] };
+  onChange: (v: string) => void;
+  placeholder?: string;
+  numeric?: boolean;
+}) {
+  const hasOptions = options && options.length > 0;
+  return (
+    <div>
+      <label className="block text-sm font-medium text-visa-gray-700 mb-1">
+        {label}
+        {sourceInfo && (
+          <span className="ml-2 text-xs font-normal text-visa-gray-400">
+            from {sourceInfo.source_column}
+          </span>
+        )}
+      </label>
+      {hasOptions ? (
+        <div className="relative">
+          <select
+            value={String(value)}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm bg-white appearance-none pr-8"
+          >
+            <option value="">— auto-detect —</option>
+            {options.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+            <svg className="h-4 w-4 text-visa-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+      ) : (
+        <input
+          type={numeric ? "number" : "text"}
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm"
+          placeholder={placeholder}
+        />
+      )}
+    </div>
+  );
+}
 
 export default function PipelineDashboard({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = use(params);
@@ -31,6 +91,8 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
     acquirer_bid: 0,
     acquirer_bin: 0,
   });
+  const [refValues, setRefValues] = useState<ReferenceValues | null>(null);
+  const [loadingRef, setLoadingRef] = useState(false);
 
   const pollStatus = useCallback(async () => {
     try {
@@ -44,7 +106,13 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
 
   useEffect(() => {
     pollStatus();
-  }, [pollStatus]);
+    // Load reference values from uploaded data
+    setLoadingRef(true);
+    getReferenceValues(jobId)
+      .then((rv) => setRefValues(rv))
+      .catch(() => {})
+      .finally(() => setLoadingRef(false));
+  }, [pollStatus, jobId]);
 
   useEffect(() => {
     if (!running) return;
@@ -73,7 +141,14 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
   const handleStart = async () => {
     setRunning(true);
     const steps = selectedSteps.size === AVAILABLE_STEPS.length ? undefined : Array.from(selectedSteps);
-    await runPipeline(jobId, cibConfig.processor_name ? cibConfig : undefined, steps);
+    // Send config only if user selected at least one value; otherwise let backend auto-detect
+    const hasAnyValue =
+      cibConfig.processor_name ||
+      cibConfig.processor_bin_cib ||
+      cibConfig.acquirer_name ||
+      cibConfig.acquirer_bid ||
+      cibConfig.acquirer_bin;
+    await runPipeline(jobId, hasAnyValue ? cibConfig : undefined, steps);
   };
 
   const step = status?.step || "uploaded";
@@ -144,41 +219,75 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
           {/* CIB/BIN Config — only show when transform steps are selected */}
           {(selectedSteps.has("query_generation") || selectedSteps.has("executing")) && (
             <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200 p-6">
-              <h3 className="font-semibold text-visa-navy mb-4">Configure Processor / Acquirer Details</h3>
-              <p className="text-sm text-visa-gray-500 mb-4">
-                Optionally configure the CIB/BIN values. Leave blank to auto-detect from uploaded data.
-              </p>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-visa-navy">Configure Processor / Acquirer Details</h3>
+                  <p className="text-sm text-visa-gray-500 mt-1">
+                    {refValues?.source_table
+                      ? <>Values detected from <span className="font-medium text-visa-navy">{refValues.source_table}</span>. Select from dropdown or leave blank to auto-detect.</>
+                      : "Leave blank to auto-detect from uploaded data."}
+                  </p>
+                </div>
+                {loadingRef && (
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-visa-navy border-t-transparent" />
+                )}
+              </div>
+
+              {refValues?.source_table && (
+                <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                  Reference data found in uploaded file. Dropdowns show available values. You can also type a custom value.
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-visa-gray-700 mb-1">Processor Name</label>
-                  <input type="text" value={cibConfig.processor_name}
-                    onChange={(e) => setCibConfig({ ...cibConfig, processor_name: e.target.value })}
-                    className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., SwiftSwitch Networks" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-visa-gray-700 mb-1">Processor BIN/CIB</label>
-                  <input type="number" value={cibConfig.processor_bin_cib || ""}
-                    onChange={(e) => setCibConfig({ ...cibConfig, processor_bin_cib: Number(e.target.value) })}
-                    className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 422983" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-visa-gray-700 mb-1">Acquirer Name</label>
-                  <input type="text" value={cibConfig.acquirer_name}
-                    onChange={(e) => setCibConfig({ ...cibConfig, acquirer_name: e.target.value })}
-                    className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., Meridian Credit Bank" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-visa-gray-700 mb-1">Acquirer BID</label>
-                  <input type="number" value={cibConfig.acquirer_bid || ""}
-                    onChange={(e) => setCibConfig({ ...cibConfig, acquirer_bid: Number(e.target.value) })}
-                    className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 48364142" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-visa-gray-700 mb-1">Acquirer BIN</label>
-                  <input type="number" value={cibConfig.acquirer_bin || ""}
-                    onChange={(e) => setCibConfig({ ...cibConfig, acquirer_bin: Number(e.target.value) })}
-                    className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 419489" />
-                </div>
+                {/* Processor Name */}
+                <CIBField
+                  label="Processor Name"
+                  value={cibConfig.processor_name}
+                  options={refValues?.fields?.processor_name?.values}
+                  sourceInfo={refValues?.fields?.processor_name}
+                  onChange={(v) => setCibConfig({ ...cibConfig, processor_name: v })}
+                  placeholder="e.g., SwiftSwitch Networks"
+                />
+                {/* Processor BIN/CIB */}
+                <CIBField
+                  label="Processor BIN/CIB"
+                  value={cibConfig.processor_bin_cib || ""}
+                  options={refValues?.fields?.processor_bin_cib?.values}
+                  sourceInfo={refValues?.fields?.processor_bin_cib}
+                  onChange={(v) => setCibConfig({ ...cibConfig, processor_bin_cib: Number(v) || 0 })}
+                  placeholder="e.g., 422983"
+                  numeric
+                />
+                {/* Acquirer Name */}
+                <CIBField
+                  label="Acquirer Name"
+                  value={cibConfig.acquirer_name}
+                  options={refValues?.fields?.acquirer_name?.values}
+                  sourceInfo={refValues?.fields?.acquirer_name}
+                  onChange={(v) => setCibConfig({ ...cibConfig, acquirer_name: v })}
+                  placeholder="e.g., Meridian Credit Bank"
+                />
+                {/* Acquirer BID */}
+                <CIBField
+                  label="Acquirer BID"
+                  value={cibConfig.acquirer_bid || ""}
+                  options={refValues?.fields?.acquirer_bid?.values}
+                  sourceInfo={refValues?.fields?.acquirer_bid}
+                  onChange={(v) => setCibConfig({ ...cibConfig, acquirer_bid: Number(v) || 0 })}
+                  placeholder="e.g., 48364142"
+                  numeric
+                />
+                {/* Acquirer BIN */}
+                <CIBField
+                  label="Acquirer BIN"
+                  value={cibConfig.acquirer_bin || ""}
+                  options={refValues?.fields?.acquirer_bin?.values}
+                  sourceInfo={refValues?.fields?.acquirer_bin}
+                  onChange={(v) => setCibConfig({ ...cibConfig, acquirer_bin: Number(v) || 0 })}
+                  placeholder="e.g., 419489"
+                  numeric
+                />
               </div>
             </div>
           )}
