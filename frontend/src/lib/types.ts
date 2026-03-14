@@ -61,7 +61,8 @@ export interface ViolationRecord {
   rule_name: string;
   description: string;
   affected_columns: string[];
-  count: number;
+  count: number;        // total affected rows
+  group_count: number;  // distinct violation groups (for group-based rules)
   sample_rows: Record<string, unknown>[];
 }
 

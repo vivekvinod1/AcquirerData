@@ -79,7 +79,8 @@ class ViolationRecord(BaseModel):
     rule_name: str
     description: str
     affected_columns: list[str]
-    count: int
+    count: int             # total rows returned by the rule SQL
+    group_count: int = 0   # distinct violation groups (for group-based rules)
     sample_rows: list[dict]
 
 

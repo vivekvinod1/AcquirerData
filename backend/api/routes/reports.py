@@ -28,14 +28,44 @@ async def download_reports(job_id: str):
                 sheet_name = f"DQ_{tq.table_name[:25]}"
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Violations sheet
+        # Violations — full data per rule (not just sample rows)
         if job.violation_report:
-            viol_data = []
+            # Summary sheet with counts
+            summary_data = []
             for v in job.violation_report.violations:
-                for row in v.sample_rows:
-                    viol_data.append({"rule_id": v.rule_id, "rule_name": v.rule_name, **row})
-            if viol_data:
-                pd.DataFrame(viol_data).to_excel(writer, sheet_name="Violations", index=False)
+                summary_data.append({
+                    "rule_id": v.rule_id,
+                    "rule_name": v.rule_name,
+                    "description": v.description,
+                    "affected_rows": v.count,
+                    "groups": v.group_count,
+                    "affected_columns": ", ".join(v.affected_columns),
+                })
+            if summary_data:
+                pd.DataFrame(summary_data).to_excel(
+                    writer, sheet_name="Violation Summary", index=False
+                )
+
+            # Full violation rows per rule (from stored DataFrames)
+            viol_dfs = getattr(job, "violation_dataframes", {})
+            for v in job.violation_report.violations:
+                if v.count <= 0:
+                    continue
+                rule_df = viol_dfs.get(v.rule_id)
+                if rule_df is not None and len(rule_df) > 0:
+                    # Drop internal normalized columns (start with _)
+                    export_cols = [c for c in rule_df.columns if not c.startswith("_")]
+                    sheet = f"V_{v.rule_id}"  # e.g. "V_V11"
+                    rule_df[export_cols].to_excel(
+                        writer, sheet_name=sheet[:31], index=False
+                    )
+                else:
+                    # Fallback to sample rows if full DF not available
+                    if v.sample_rows:
+                        rows = [{"rule_id": v.rule_id, **row} for row in v.sample_rows]
+                        pd.DataFrame(rows).to_excel(
+                            writer, sheet_name=f"V_{v.rule_id}"[:31], index=False
+                        )
 
         # AMMF output sheet
         if job.ammf_dataframe is not None:

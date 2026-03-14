@@ -53,7 +53,8 @@ export default function ViolationTable({ report, jobId, onViolationsUpdated }: V
               <th className="text-left p-3 font-medium">Rule</th>
               <th className="text-left p-3 font-medium">Description</th>
               <th className="text-left p-3 font-medium">Affected Columns</th>
-              <th className="text-right p-3 font-medium">Count</th>
+              <th className="text-right p-3 font-medium">Groups</th>
+              <th className="text-right p-3 font-medium">Rows</th>
               <th className="text-center p-3 font-medium">Actions</th>
             </tr>
           </thead>
@@ -107,7 +108,8 @@ function ViolationRow({
             <span key={col} className="inline-block px-2 py-0.5 mr-1 bg-visa-gray-100 rounded text-xs">{col}</span>
           ))}
         </td>
-        <td className="p-3 text-right font-bold text-visa-red">{violation.count.toLocaleString()}</td>
+        <td className="p-3 text-right font-bold text-visa-red">{(violation.group_count || violation.count).toLocaleString()}</td>
+        <td className="p-3 text-right text-visa-gray-500">{violation.count.toLocaleString()}</td>
         <td className="p-3 text-center">
           <button
             onClick={onToggle}
@@ -123,7 +125,7 @@ function ViolationRow({
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={5} className="p-4 bg-visa-gray-50/50">
+          <td colSpan={6} className="p-4 bg-visa-gray-50/50">
             <RemediationPanel
               jobId={jobId}
               violation={violation}
