@@ -26,6 +26,7 @@ class Job:
         self.error: str | None = None
         self.violation_dataframes: dict[str, pd.DataFrame] = {}  # rule_id -> full violation rows
         self.remediation_plans: dict[str, "RemediationPlan"] = {}  # rule_id -> plan
+        self.llm_call_logs: list = []  # LLMCallLog objects for this job's latest run
 
     def get_status(self) -> PipelineStatus:
         return PipelineStatus(
