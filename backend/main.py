@@ -23,6 +23,9 @@ app.include_router(reports.router, tags=["Reports"])
 app.include_router(remediation.router, tags=["Remediation"])
 
 
+BUILD_VERSION = "v2.1-bind-job"
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": settings.app_name}
+    return {"status": "ok", "app": settings.app_name, "version": BUILD_VERSION}
