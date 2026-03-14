@@ -45,12 +45,12 @@ async def get_generated_sql(job_id: str):
 
 @router.get("/pipeline/llm-logs/{job_id}")
 async def get_llm_logs(job_id: str):
-    """Return all LLM call logs for the current session."""
+    """Return LLM call logs scoped to this job's latest run."""
     job = job_store.get_job(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
     from core.llm_client import llm_client
-    return llm_client.get_call_summary()
+    return llm_client.get_call_summary(job_id=job_id)
 
 
 # ---------------------------------------------------------------------------

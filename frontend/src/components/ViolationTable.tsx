@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { ViolationReport, RemediationApplyResult } from "@/lib/types";
-import { VIOLATION_LABELS } from "@/lib/constants";
+import type { ViolationReport } from "@/lib/types";
 import RemediationPanel from "./RemediationPanel";
 
 interface ViolationTableProps {
@@ -17,10 +16,6 @@ export default function ViolationTable({ report, jobId, onViolationsUpdated }: V
   const filtered = filter
     ? report.violations.filter((v) => v.rule_id === filter)
     : report.violations.filter((v) => v.count > 0);
-
-  const handleFixApplied = (result: RemediationApplyResult) => {
-    onViolationsUpdated?.();
-  };
 
   return (
     <div className="space-y-4">
@@ -66,7 +61,7 @@ export default function ViolationTable({ report, jobId, onViolationsUpdated }: V
                 jobId={jobId}
                 isExpanded={expandedRule === v.rule_id}
                 onToggle={() => setExpandedRule(expandedRule === v.rule_id ? null : v.rule_id)}
-                onFixApplied={handleFixApplied}
+                onViolationsUpdated={onViolationsUpdated}
               />
             ))}
           </tbody>
@@ -88,13 +83,13 @@ function ViolationRow({
   jobId,
   isExpanded,
   onToggle,
-  onFixApplied,
+  onViolationsUpdated,
 }: {
   violation: ViolationReport["violations"][0];
   jobId: string;
   isExpanded: boolean;
   onToggle: () => void;
-  onFixApplied: (result: RemediationApplyResult) => void;
+  onViolationsUpdated?: () => void;
 }) {
   return (
     <>
@@ -119,7 +114,7 @@ function ViolationRow({
                 : "bg-visa-gold text-visa-navy hover:bg-visa-gold/80"
             }`}
           >
-            {isExpanded ? "Close" : "Fix"}
+            {isExpanded ? "Close" : "Investigate"}
           </button>
         </td>
       </tr>
@@ -129,7 +124,7 @@ function ViolationRow({
             <RemediationPanel
               jobId={jobId}
               violation={violation}
-              onFixApplied={onFixApplied}
+              onFixApplied={onViolationsUpdated}
             />
           </td>
         </tr>

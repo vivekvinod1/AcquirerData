@@ -12,6 +12,7 @@ import type {
   RemediationPlan,
   RemediationApplyResult,
   WebResearchResult,
+  ViolationRows,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -96,6 +97,21 @@ export async function getLLMLogs(jobId: string): Promise<LLMCallSummary> {
 
 export async function getReferenceValues(jobId: string): Promise<ReferenceValues> {
   return fetchAPI<ReferenceValues>(`/pipeline/reference-values/${jobId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Violation Rows
+// ---------------------------------------------------------------------------
+
+export async function getViolationRows(
+  jobId: string,
+  ruleId: string,
+  page = 1,
+  pageSize = 50
+): Promise<ViolationRows> {
+  return fetchAPI<ViolationRows>(
+    `/remediation/rows/${jobId}/${ruleId}?page=${page}&page_size=${pageSize}`
+  );
 }
 
 // ---------------------------------------------------------------------------

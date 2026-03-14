@@ -32,6 +32,33 @@ class ApplyWebFixRequest(BaseModel):
     fixes: list[dict]  # [{column, value}]
 
 
+@router.get("/remediation/rows/{job_id}/{rule_id}")
+async def get_violation_rows(job_id: str, rule_id: str, page: int = 1, page_size: int = 50):
+    """Return paginated violation rows for a specific rule."""
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    viol_dfs = getattr(job, "violation_dataframes", {})
+    df = viol_dfs.get(rule_id)
+    if df is None:
+        raise HTTPException(404, f"No violation data for {rule_id}")
+
+    total = len(df)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_df = df.iloc[start:end].fillna("")
+
+    return {
+        "rule_id": rule_id,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "columns": list(df.columns),
+        "rows": page_df.to_dict(orient="records"),
+    }
+
+
 @router.post("/remediation/plan")
 async def generate_plan(request: RemediationPlanRequest):
     """Generate a remediation plan for a specific violation rule."""

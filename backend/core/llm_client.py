@@ -48,25 +48,39 @@ class LLMClient:
     def __init__(self):
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         self.model = settings.claude_model
-        self._call_logs: list[LLMCallLog] = []
+        self._call_logs: list[LLMCallLog] = []      # all-time (legacy)
+        self._job_logs: dict[str, list[LLMCallLog]] = {}  # per-job
         self._call_counter = 0
+        self._current_job_id: str | None = None
 
-    def get_call_logs(self) -> list[dict]:
-        return [log.to_dict() for log in self._call_logs]
+    def set_current_job(self, job_id: str) -> None:
+        """Set which job is currently running so logs are scoped to it."""
+        self._current_job_id = job_id
+        if job_id not in self._job_logs:
+            self._job_logs[job_id] = []
 
-    def get_call_summary(self) -> dict:
-        total_input = sum(l.input_tokens for l in self._call_logs)
-        total_output = sum(l.output_tokens for l in self._call_logs)
-        total_cost = sum(l.cost_usd for l in self._call_logs)
-        total_duration = sum(l.duration_ms for l in self._call_logs)
+    def clear_job_logs(self, job_id: str) -> None:
+        """Clear logs for a job (call at pipeline start to reset per-run)."""
+        self._job_logs[job_id] = []
+
+    def get_call_logs(self, job_id: str | None = None) -> list[dict]:
+        logs = self._job_logs.get(job_id, []) if job_id else self._call_logs
+        return [log.to_dict() for log in logs]
+
+    def get_call_summary(self, job_id: str | None = None) -> dict:
+        logs = self._job_logs.get(job_id, []) if job_id else self._call_logs
+        total_input = sum(l.input_tokens for l in logs)
+        total_output = sum(l.output_tokens for l in logs)
+        total_cost = sum(l.cost_usd for l in logs)
+        total_duration = sum(l.duration_ms for l in logs)
         return {
-            "total_calls": len(self._call_logs),
+            "total_calls": len(logs),
             "total_input_tokens": total_input,
             "total_output_tokens": total_output,
             "total_tokens": total_input + total_output,
             "total_cost_usd": round(total_cost, 6),
             "total_duration_ms": total_duration,
-            "calls": self.get_call_logs(),
+            "calls": [l.to_dict() for l in logs],
         }
 
     def _compute_cost(self, input_tokens: int, output_tokens: int) -> float:
@@ -78,6 +92,9 @@ class LLMClient:
         log = LLMCallLog(self._call_counter, method, system_prompt, user_prompt)
         log.model = self.model
         self._call_logs.append(log)
+        # Also store per-job
+        if self._current_job_id and self._current_job_id in self._job_logs:
+            self._job_logs[self._current_job_id].append(log)
         return log
 
     def structured_query(self, system_prompt: str, user_prompt: str, output_schema: dict) -> dict:

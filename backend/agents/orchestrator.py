@@ -27,6 +27,12 @@ def _should_run(job: Job, step_key: str) -> bool:
 async def run_pipeline_async(job: Job):
     """Run the AMMF pipeline as a background task. Respects job.selected_steps."""
     job.started_at = datetime.now().isoformat()
+
+    # Scope LLM logs to this job and clear previous run's logs
+    from core.llm_client import llm_client
+    llm_client.set_current_job(job.job_id)
+    llm_client.clear_job_logs(job.job_id)
+
     try:
         # Determine which groups to run
         run_mapping = _should_run(job, "schema_mapping")

@@ -79,6 +79,15 @@ export interface AMMFPreview {
   page_size: number;
 }
 
+export interface ViolationRows {
+  rule_id: string;
+  total: number;
+  page: number;
+  page_size: number;
+  columns: string[];
+  rows: Record<string, unknown>[];
+}
+
 export interface CIBBINConfig {
   processor_name: string;
   processor_bin_cib: number;
