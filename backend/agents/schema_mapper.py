@@ -11,14 +11,16 @@ Your task is to analyze source data schemas from an acquirer and map each source
 
 Key rules:
 - Each AMMF column should map to at most one source column (or be derived from a combination).
+- The number and structure of source tables varies per acquirer — sometimes 3 tables, sometimes 12+. Analyze ALL provided tables carefully.
 - Some AMMF columns are derived conditionally (e.g., AcquirerMerchantID comes from SubMerchantID for PF merchants, or AcquirerAssignedMerchantID for direct merchants).
-- BASEIIName is derived: for PF records it's AggregatorName + DBA variant; for direct records it's NULL.
-- ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN come from a processor/BIN reference table — they are user-configured, not mapped from merchant data.
-- MCC1 maps from the primary MCC field. MCC2-MCC9 are left blank.
+- BASEIIName is derived: for PF records it's typically AggregatorName + DBA variant; for direct records it's NULL.
+- For ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN: look for these in the actual uploaded data. They may exist as columns in a reference/master table (e.g., a table with "bin", "cib", "bid", "master" in its name), or they may be columns in the main merchant data itself. Map them to whichever source table and column they actually appear in. If you find them in a reference table, set source_table and source_column accordingly. Only mark them as is_derived=true if they genuinely need computation; if they're a direct column in a reference table, that's a direct mapping.
+- MCC1 maps from the primary MCC field. MCC2-MCC9 are typically left blank unless source data contains secondary MCC fields.
 - LocationCountry maps from a country code field.
 - Look for semantic matches, not just exact name matches. For example, "merchant_name" could map to DBAName, "tax_number" to BusinessRegistrationID, etc.
 - Provide a confidence score (0.0-1.0) and reasoning for each mapping.
-- Mark columns as is_derived=true if they require conditional logic or computation rather than a direct column copy."""
+- Mark columns as is_derived=true if they require conditional logic or computation rather than a direct column copy.
+- Do NOT assume any fixed table names or structures — base all mappings on what you actually see in the source data."""
 
 
 async def run_schema_mapping(job: Job) -> SchemaMapping:
@@ -27,6 +29,8 @@ async def run_schema_mapping(job: Job) -> SchemaMapping:
 
     user_prompt = f"""Analyze the following source data tables and map their columns to the AMMF output format.
 
+There are {len(schema_summary)} source table(s). Study ALL of them — some may be merchant data, others may be reference/master tables containing processor, acquirer, BIN, CIB, or BID information.
+
 SOURCE DATA SCHEMAS:
 {_format_schema_summary(schema_summary)}
 
@@ -34,13 +38,15 @@ TARGET FORMAT:
 {ammf_spec}
 
 For each of the 31 AMMF columns, determine:
-1. Which source table and column maps to it (if any)
-2. Whether it's a direct mapping or derived
+1. Which source table and column maps to it (if any) — search across ALL tables above
+2. Whether it's a direct mapping or derived (requires conditional logic / computation)
 3. Your confidence level (0.0-1.0)
 4. Reasoning for the mapping
 
-Note: ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN are user-configured from a reference table. Mark these as is_derived=true with derivation_logic="user_configured_from_bin_master".
-MCC2-MCC9 should be left unmapped (they are optional and will be blank)."""
+Important:
+- For ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN: look at the actual source tables above. If a reference/master table contains these values, map them to that table and column directly. If they don't appear in any table, mark as unmapped.
+- MCC2-MCC9 should be left unmapped unless secondary MCC columns exist in the source data.
+- Do NOT hardcode any table names — only reference tables you can see in the source data above."""
 
     output_schema = {
         "type": "object",

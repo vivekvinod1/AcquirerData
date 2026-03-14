@@ -19,7 +19,7 @@ CRITICAL RULES:
    - LocationCountry: Map from country code field
    - MCC1: From primary MCC field
    - MCC2-MCC9: NULL (leave blank)
-6. ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN are user-configured constants — use the provided values.
+6. ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN: use the values specified in the PROCESSOR / ACQUIRER VALUES section below. These may come from user selection, auto-detection from a reference table, or a JOIN to a reference table. Follow the instructions in that section.
 7. Use LEFT JOINs for optional tables (aggregator, reference tables).
 8. Ensure NO duplicate rows — use DISTINCT or appropriate grouping.
 9. Table and column names with spaces must be quoted with double quotes.
