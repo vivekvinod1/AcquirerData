@@ -1,7 +1,8 @@
 """13 AMMF Violation Rules implemented as DuckDB SQL queries.
 
-All rules normalize CAID / MID values (TRIM + UPPER) before comparison
-to prevent false positives from whitespace or casing differences.
+CAID and MID are formal identifiers — we compare them with TRIM only (no UPPER)
+so that case differences are treated as genuinely different values.
+Free-text fields (names, addresses) still use UPPER+TRIM normalization.
 """
 
 import pandas as pd
@@ -49,12 +50,13 @@ def check_v2_street_city_same(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v3_same_mid_caid_dba_multiple_addresses(db: DuckDBEngine) -> pd.DataFrame:
     """V3: Same MID + CAID + DBA name but multiple addresses.
-    Normalizes CAID and MID to prevent false positives from whitespace/casing."""
+    CAID and MID use TRIM only (formal identifiers, case-sensitive).
+    DBA and address fields use UPPER+TRIM (free-text)."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
-                UPPER(TRIM(CAST(CAID AS VARCHAR))) AS _n_caid,
-                UPPER(TRIM(CAST(AcquirerMerchantID AS VARCHAR))) AS _n_mid,
+                TRIM(CAST(CAID AS VARCHAR)) AS _n_caid,
+                TRIM(CAST(AcquirerMerchantID AS VARCHAR)) AS _n_mid,
                 UPPER(TRIM(CAST(DBAName AS VARCHAR))) AS _n_dba,
                 UPPER(TRIM(CAST(Street AS VARCHAR))) || '|' ||
                     UPPER(TRIM(CAST(City AS VARCHAR))) || '|' ||
@@ -195,12 +197,13 @@ def check_v9_invalid_business_registration(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v10_same_mid_caid_different_names(db: DuckDBEngine) -> pd.DataFrame:
     """V10: Same MID + CAID but different DBA names or Legal names.
-    Normalizes CAID and MID to prevent false positives."""
+    CAID and MID use TRIM only (formal identifiers, case-sensitive).
+    Names use UPPER+TRIM (free-text)."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
-                UPPER(TRIM(CAST(CAID AS VARCHAR))) AS _n_caid,
-                UPPER(TRIM(CAST(AcquirerMerchantID AS VARCHAR))) AS _n_mid,
+                TRIM(CAST(CAID AS VARCHAR)) AS _n_caid,
+                TRIM(CAST(AcquirerMerchantID AS VARCHAR)) AS _n_mid,
                 UPPER(TRIM(CAST(DBAName AS VARCHAR))) AS _n_dba,
                 UPPER(TRIM(CAST(LegalName AS VARCHAR))) AS _n_legal
             FROM ammf_output
@@ -222,13 +225,13 @@ def check_v10_same_mid_caid_different_names(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v11_different_mids_same_caid(db: DuckDBEngine) -> pd.DataFrame:
     """V11: Different MIDs sharing the same CAID.
-    Normalizes CAID to prevent whitespace/casing false positives.
+    CAID and MID use TRIM only (formal identifiers, case-sensitive).
     Excludes empty/null CAIDs."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
-                UPPER(TRIM(CAST(CAID AS VARCHAR))) AS _n_caid,
-                UPPER(TRIM(CAST(AcquirerMerchantID AS VARCHAR))) AS _n_mid
+                TRIM(CAST(CAID AS VARCHAR)) AS _n_caid,
+                TRIM(CAST(AcquirerMerchantID AS VARCHAR)) AS _n_mid
             FROM ammf_output
             WHERE CAID IS NOT NULL
               AND TRIM(CAST(CAID AS VARCHAR)) != ''
@@ -325,7 +328,7 @@ VIOLATION_RULES = [
      "columns": ["AcquirerMerchantID", "CAID", "DBAName", "LegalName"],
      "func": check_v10_same_mid_caid_different_names},
     {"id": "V11", "name": "Different MIDs Same CAID",
-     "description": "Different MIDs but same CAID (after normalization)",
+     "description": "Different MIDs but same CAID (exact match, trimmed)",
      "columns": ["AcquirerMerchantID", "CAID"],
      "func": check_v11_different_mids_same_caid},
     {"id": "V12", "name": "BASEIIName Copied to DBA/Legal",
