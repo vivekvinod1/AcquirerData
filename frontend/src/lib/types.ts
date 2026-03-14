@@ -97,6 +97,48 @@ export interface ReferenceValues {
   fields: Partial<Record<keyof CIBBINConfig, ReferenceFieldInfo>>;
 }
 
+// ---------------------------------------------------------------------------
+// Remediation Engine types
+// ---------------------------------------------------------------------------
+
+export type RemediationStrategy = "auto_fix" | "web_research" | "manual_review";
+
+export interface RemediationFix {
+  row_indices: number[];
+  column: string;
+  old_value: string | null;
+  new_value: string | null;
+  reasoning: string;
+  confidence: number;
+  strategy: RemediationStrategy;
+  needs_confirmation: boolean;
+}
+
+export interface RemediationPlan {
+  rule_id: string;
+  rule_name: string;
+  total_affected: number;
+  fixes: RemediationFix[];
+  summary: string;
+  strategy: RemediationStrategy;
+}
+
+export interface WebResearchResult {
+  merchant_name: string;
+  query: string;
+  findings: { source: string; title: string; snippet: string; relevance: string }[];
+  suggested_fixes: { column: string; value: string; reasoning: string; confidence?: number }[];
+  raw_analysis: string;
+  search_queries_used: string[];
+}
+
+export interface RemediationApplyResult {
+  rows_modified: number;
+  new_violation_count: number;
+  previous_violation_count: number;
+  delta: number;
+}
+
 export interface LLMCallLog {
   call_id: number;
   method: string;

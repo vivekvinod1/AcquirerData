@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import ViolationTable from "@/components/ViolationTable";
 import { getViolations } from "@/lib/api";
@@ -12,11 +12,15 @@ export default function ViolationsPage({ params }: { params: Promise<{ jobId: st
   const [report, setReport] = useState<ViolationReport | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadReport = useCallback(() => {
     getViolations(jobId)
       .then((data) => setReport(data))
       .finally(() => setLoading(false));
   }, [jobId]);
+
+  useEffect(() => {
+    loadReport();
+  }, [loadReport]);
 
   if (loading) return <div className="text-center py-12 text-visa-gray-500">Loading violation report...</div>;
   if (!report) return <div className="text-center py-12 text-visa-gray-500">Violation report not yet available</div>;
@@ -37,7 +41,7 @@ export default function ViolationsPage({ params }: { params: Promise<{ jobId: st
           Back to Dashboard
         </button>
       </div>
-      <ViolationTable report={report} />
+      <ViolationTable report={report} jobId={jobId} onViolationsUpdated={loadReport} />
     </div>
   );
 }

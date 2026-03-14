@@ -24,6 +24,7 @@ class Job:
         self.cib_bin_config: dict | None = None
         self.selected_steps: list[str] | None = None  # None = all
         self.error: str | None = None
+        self.remediation_plans: dict[str, "RemediationPlan"] = {}  # rule_id -> plan
 
     def get_status(self) -> PipelineStatus:
         return PipelineStatus(

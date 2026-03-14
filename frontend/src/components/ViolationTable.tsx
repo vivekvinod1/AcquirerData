@@ -1,18 +1,26 @@
 "use client";
 import { useState } from "react";
-import type { ViolationReport } from "@/lib/types";
+import type { ViolationReport, RemediationApplyResult } from "@/lib/types";
 import { VIOLATION_LABELS } from "@/lib/constants";
+import RemediationPanel from "./RemediationPanel";
 
 interface ViolationTableProps {
   report: ViolationReport;
+  jobId: string;
+  onViolationsUpdated?: () => void;
 }
 
-export default function ViolationTable({ report }: ViolationTableProps) {
+export default function ViolationTable({ report, jobId, onViolationsUpdated }: ViolationTableProps) {
   const [filter, setFilter] = useState<string | null>(null);
+  const [expandedRule, setExpandedRule] = useState<string | null>(null);
 
   const filtered = filter
     ? report.violations.filter((v) => v.rule_id === filter)
     : report.violations.filter((v) => v.count > 0);
+
+  const handleFixApplied = (result: RemediationApplyResult) => {
+    onViolationsUpdated?.();
+  };
 
   return (
     <div className="space-y-4">
@@ -46,22 +54,19 @@ export default function ViolationTable({ report }: ViolationTableProps) {
               <th className="text-left p-3 font-medium">Description</th>
               <th className="text-left p-3 font-medium">Affected Columns</th>
               <th className="text-right p-3 font-medium">Count</th>
+              <th className="text-center p-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-visa-gray-100">
             {filtered.map((v) => (
-              <tr key={v.rule_id} className="hover:bg-visa-gray-50">
-                <td className="p-3">
-                  <span className="px-2 py-1 bg-visa-red text-white rounded text-xs font-bold">{v.rule_id}</span>
-                </td>
-                <td className="p-3 text-visa-gray-700">{v.description}</td>
-                <td className="p-3">
-                  {v.affected_columns.map((col) => (
-                    <span key={col} className="inline-block px-2 py-0.5 mr-1 bg-visa-gray-100 rounded text-xs">{col}</span>
-                  ))}
-                </td>
-                <td className="p-3 text-right font-bold text-visa-red">{v.count.toLocaleString()}</td>
-              </tr>
+              <ViolationRow
+                key={v.rule_id}
+                violation={v}
+                jobId={jobId}
+                isExpanded={expandedRule === v.rule_id}
+                onToggle={() => setExpandedRule(expandedRule === v.rule_id ? null : v.rule_id)}
+                onFixApplied={handleFixApplied}
+              />
             ))}
           </tbody>
         </table>
@@ -74,5 +79,59 @@ export default function ViolationTable({ report }: ViolationTableProps) {
         </div>
       )}
     </div>
+  );
+}
+
+function ViolationRow({
+  violation,
+  jobId,
+  isExpanded,
+  onToggle,
+  onFixApplied,
+}: {
+  violation: ViolationReport["violations"][0];
+  jobId: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onFixApplied: (result: RemediationApplyResult) => void;
+}) {
+  return (
+    <>
+      <tr className="hover:bg-visa-gray-50">
+        <td className="p-3">
+          <span className="px-2 py-1 bg-visa-red text-white rounded text-xs font-bold">{violation.rule_id}</span>
+        </td>
+        <td className="p-3 text-visa-gray-700">{violation.description}</td>
+        <td className="p-3">
+          {violation.affected_columns.map((col) => (
+            <span key={col} className="inline-block px-2 py-0.5 mr-1 bg-visa-gray-100 rounded text-xs">{col}</span>
+          ))}
+        </td>
+        <td className="p-3 text-right font-bold text-visa-red">{violation.count.toLocaleString()}</td>
+        <td className="p-3 text-center">
+          <button
+            onClick={onToggle}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+              isExpanded
+                ? "bg-visa-navy text-white"
+                : "bg-visa-gold text-visa-navy hover:bg-visa-gold/80"
+            }`}
+          >
+            {isExpanded ? "Close" : "Fix"}
+          </button>
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr>
+          <td colSpan={5} className="p-4 bg-visa-gray-50/50">
+            <RemediationPanel
+              jobId={jobId}
+              violation={violation}
+              onFixApplied={onFixApplied}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

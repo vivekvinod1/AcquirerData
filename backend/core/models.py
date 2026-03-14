@@ -108,3 +108,58 @@ class AMMFPreview(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ---------------------------------------------------------------------------
+# Remediation Engine models
+# ---------------------------------------------------------------------------
+
+class RemediationStrategy(str, Enum):
+    AUTO_FIX = "auto_fix"
+    WEB_RESEARCH = "web_research"
+    MANUAL_REVIEW = "manual_review"
+
+
+class RemediationFix(BaseModel):
+    """A single proposed fix for one or more rows."""
+    row_indices: list[int]  # indices into the AMMF DataFrame
+    column: str
+    old_value: str | None = None
+    new_value: str | None = None
+    reasoning: str = ""
+    confidence: float = 0.0
+    strategy: RemediationStrategy = RemediationStrategy.AUTO_FIX
+    needs_confirmation: bool = True
+
+
+class RemediationPlan(BaseModel):
+    """Plan generated for a single violation rule."""
+    rule_id: str
+    rule_name: str
+    total_affected: int
+    fixes: list[RemediationFix]
+    summary: str = ""
+    strategy: RemediationStrategy = RemediationStrategy.AUTO_FIX
+
+
+class WebResearchResult(BaseModel):
+    """Result from web research for a merchant."""
+    merchant_name: str
+    query: str
+    findings: list[dict] = []  # [{source, title, snippet, relevance}]
+    suggested_fixes: list[dict] = []  # [{column, value, reasoning}]
+    raw_analysis: str = ""
+    search_queries_used: list[str] = []
+
+
+class RemediationApplyRequest(BaseModel):
+    job_id: str
+    rule_id: str
+    fix_indices: list[int]  # which fixes from the plan to apply
+
+
+class RemediationApplyResult(BaseModel):
+    rows_modified: int
+    new_violation_count: int
+    previous_violation_count: int
+    delta: int

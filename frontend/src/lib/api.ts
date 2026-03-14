@@ -9,6 +9,9 @@ import type {
   CIBBINConfig,
   LLMCallSummary,
   ReferenceValues,
+  RemediationPlan,
+  RemediationApplyResult,
+  WebResearchResult,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -93,4 +96,56 @@ export async function getLLMLogs(jobId: string): Promise<LLMCallSummary> {
 
 export async function getReferenceValues(jobId: string): Promise<ReferenceValues> {
   return fetchAPI<ReferenceValues>(`/pipeline/reference-values/${jobId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Remediation Engine
+// ---------------------------------------------------------------------------
+
+export async function getRemediationPlan(jobId: string, ruleId: string): Promise<RemediationPlan> {
+  return fetchAPI<RemediationPlan>("/remediation/plan", {
+    method: "POST",
+    body: JSON.stringify({ job_id: jobId, rule_id: ruleId }),
+  });
+}
+
+export async function applyRemediationFixes(
+  jobId: string,
+  ruleId: string,
+  fixIndices: number[]
+): Promise<RemediationApplyResult> {
+  return fetchAPI<RemediationApplyResult>("/remediation/apply", {
+    method: "POST",
+    body: JSON.stringify({ job_id: jobId, rule_id: ruleId, fix_indices: fixIndices }),
+  });
+}
+
+export async function webResearch(
+  jobId: string,
+  merchantName: string,
+  violationContext: string,
+  userObjective: string = "",
+  affectedColumns: string[] = []
+): Promise<WebResearchResult> {
+  return fetchAPI<WebResearchResult>("/remediation/research", {
+    method: "POST",
+    body: JSON.stringify({
+      job_id: jobId,
+      merchant_name: merchantName,
+      violation_context: violationContext,
+      user_objective: userObjective,
+      affected_columns: affectedColumns,
+    }),
+  });
+}
+
+export async function applyWebFix(
+  jobId: string,
+  rowIndex: number,
+  fixes: { column: string; value: string }[]
+): Promise<{ row_index: number; columns_modified: number }> {
+  return fetchAPI("/remediation/apply-web-fix", {
+    method: "POST",
+    body: JSON.stringify({ job_id: jobId, row_index: rowIndex, fixes }),
+  });
 }

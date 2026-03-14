@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from api.routes import upload, pipeline, schema, quality, violations, ammf, reports
+from api.routes import upload, pipeline, schema, quality, violations, ammf, reports, remediation
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
@@ -20,6 +20,7 @@ app.include_router(quality.router, tags=["Quality"])
 app.include_router(violations.router, tags=["Violations"])
 app.include_router(ammf.router, tags=["AMMF"])
 app.include_router(reports.router, tags=["Reports"])
+app.include_router(remediation.router, tags=["Remediation"])
 
 
 @app.get("/health")
