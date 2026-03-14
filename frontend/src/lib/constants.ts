@@ -1,0 +1,27 @@
+export const PIPELINE_STEPS = [
+  { key: "uploaded", label: "Upload", icon: "1" },
+  { key: "schema_mapping", label: "Schema Mapping", icon: "2" },
+  { key: "completeness", label: "Completeness", icon: "3" },
+  { key: "relationships", label: "Relationships", icon: "4" },
+  { key: "quality", label: "Data Quality", icon: "5" },
+  { key: "query_generation", label: "Query Generation", icon: "6" },
+  { key: "executing", label: "Executing", icon: "7" },
+  { key: "validation", label: "Validation", icon: "8" },
+  { key: "complete", label: "Complete", icon: "✓" },
+] as const;
+
+export const VIOLATION_LABELS: Record<string, string> = {
+  V1: "Acquirer Name in Merchant Fields",
+  V2: "Street and City Same",
+  V3: "Same MID/CAID/DBA, Multiple Addresses",
+  V4: "Invalid Address",
+  V5: "Invalid BASEIIName",
+  V6: "CIB/BID/BIN Copied",
+  V7: "Invalid CAID",
+  V8: "Same Address, Different MIDs",
+  V9: "Invalid Business Registration ID",
+  V10: "Same MID/CAID, Different Names",
+  V11: "Different MIDs, Same CAID",
+  V12: "BASEIIName Copied to DBA/Legal",
+  V13: "Sub-merchants Same Tax ID",
+};

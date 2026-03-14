@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --visa-navy: #1A1F71;
+  --visa-blue: #2A2F80;
+  --visa-gold: #F7B600;
+  --visa-light-gold: #FFF4D6;
+  --visa-white: #FFFFFF;
+  --visa-gray-50: #F8F9FA;
+  --visa-gray-100: #E9ECEF;
+  --visa-gray-200: #DEE2E6;
+  --visa-gray-300: #CED4DA;
+  --visa-gray-500: #6C757D;
+  --visa-gray-700: #495057;
+  --visa-gray-900: #212529;
+  --visa-green: #198754;
+  --visa-red: #DC3545;
+  --visa-orange: #FD7E14;
+  --background: #F8F9FA;
+  --foreground: #212529;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-visa-navy: var(--visa-navy);
+  --color-visa-blue: var(--visa-blue);
+  --color-visa-gold: var(--visa-gold);
+  --color-visa-light-gold: var(--visa-light-gold);
+  --color-visa-gray-50: var(--visa-gray-50);
+  --color-visa-gray-100: var(--visa-gray-100);
+  --color-visa-gray-200: var(--visa-gray-200);
+  --color-visa-gray-300: var(--visa-gray-300);
+  --color-visa-gray-500: var(--visa-gray-500);
+  --color-visa-gray-700: var(--visa-gray-700);
+  --color-visa-gray-900: var(--visa-gray-900);
+  --color-visa-green: var(--visa-green);
+  --color-visa-red: var(--visa-red);
+  --color-visa-orange: var(--visa-orange);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
