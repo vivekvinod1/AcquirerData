@@ -6,21 +6,21 @@ from core.config import settings
 
 class LLMCallLog:
     """Stores details of a single LLM call."""
-    def __init__(self, call_id: int, method: str, system_prompt: str, user_prompt: str):
+    def __init__(self, call_id, method, system_prompt, user_prompt):
         self.call_id = call_id
         self.method = method
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
-        self.output: str = ""
-        self.model: str = ""
-        self.input_tokens: int = 0
-        self.output_tokens: int = 0
-        self.cost_usd: float = 0.0
-        self.duration_ms: int = 0
-        self.timestamp: float = time.time()
-        self.error: str | None = None
+        self.output = ""
+        self.model = ""
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.cost_usd = 0.0
+        self.duration_ms = 0
+        self.timestamp = time.time()
+        self.error = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self):
         return {
             "call_id": self.call_id,
             "method": self.method,
@@ -44,12 +44,12 @@ PRICING = {
 DEFAULT_PRICING = {"input": 3.0, "output": 15.0}
 
 
-def summarize_logs(logs: list) -> dict:
+def summarize_logs(logs):
     """Build a summary dict from a list of LLMCallLog objects."""
-    total_input = sum(l.input_tokens for l in logs)
-    total_output = sum(l.output_tokens for l in logs)
-    total_cost = sum(l.cost_usd for l in logs)
-    total_duration = sum(l.duration_ms for l in logs)
+    total_input = sum(getattr(l, "input_tokens", 0) for l in logs)
+    total_output = sum(getattr(l, "output_tokens", 0) for l in logs)
+    total_cost = sum(getattr(l, "cost_usd", 0.0) for l in logs)
+    total_duration = sum(getattr(l, "duration_ms", 0) for l in logs)
     return {
         "total_calls": len(logs),
         "total_input_tokens": total_input,
@@ -66,25 +66,22 @@ class LLMClient:
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         self.model = settings.claude_model
         self._call_counter = 0
-        # Direct reference to the active job's llm_call_logs list
-        self._active_log_list: list[LLMCallLog] | None = None
+        self._active_log_list = None
 
-    def bind_job(self, job) -> None:
-        """Bind to a job so all LLM calls log directly to job.llm_call_logs.
-        Resets the job's log list for a fresh run."""
+    def bind_job(self, job):
+        """Bind to a job - resets job's logs for fresh run."""
         job.llm_call_logs = []
         self._active_log_list = job.llm_call_logs
         self._call_counter = 0
 
-    def unbind_job(self) -> None:
-        """Unbind from the current job."""
+    def unbind_job(self):
         self._active_log_list = None
 
-    def _compute_cost(self, input_tokens: int, output_tokens: int) -> float:
+    def _compute_cost(self, input_tokens, output_tokens):
         pricing = PRICING.get(self.model, DEFAULT_PRICING)
         return (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
 
-    def _log_call(self, method: str, system_prompt: str, user_prompt: str) -> LLMCallLog:
+    def _log_call(self, method, system_prompt, user_prompt):
         self._call_counter += 1
         log = LLMCallLog(self._call_counter, method, system_prompt, user_prompt)
         log.model = self.model
@@ -92,7 +89,7 @@ class LLMClient:
             self._active_log_list.append(log)
         return log
 
-    def structured_query(self, system_prompt: str, user_prompt: str, output_schema: dict) -> dict:
+    def structured_query(self, system_prompt, user_prompt, output_schema):
         """Query Claude with a tool-use pattern to get structured JSON output."""
         log = self._log_call("structured_query", system_prompt, user_prompt)
         start = time.time()
@@ -124,7 +121,7 @@ class LLMClient:
             log.error = str(e)
             raise
 
-    def text_query(self, system_prompt: str, user_prompt: str) -> str:
+    def text_query(self, system_prompt, user_prompt):
         """Query Claude for free-form text response."""
         log = self._log_call("text_query", system_prompt, user_prompt)
         start = time.time()
@@ -146,7 +143,7 @@ class LLMClient:
             log.error = str(e)
             raise
 
-    def sql_query(self, system_prompt: str, user_prompt: str) -> str:
+    def sql_query(self, system_prompt, user_prompt):
         """Query Claude specifically for SQL generation."""
         schema = {
             "type": "object",
