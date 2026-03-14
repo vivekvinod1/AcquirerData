@@ -1,7 +1,7 @@
 """13 AMMF Violation Rules implemented as DuckDB SQL queries.
 
-CAID and MID are formal identifiers — we compare them with TRIM only (no UPPER)
-so that case differences are treated as genuinely different values.
+CAID and MID are formal identifiers — we compare them exactly as-is
+(CAST to VARCHAR only, no TRIM, no UPPER). What you see is what gets compared.
 Free-text fields (names, addresses) still use UPPER+TRIM normalization.
 """
 
@@ -50,13 +50,12 @@ def check_v2_street_city_same(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v3_same_mid_caid_dba_multiple_addresses(db: DuckDBEngine) -> pd.DataFrame:
     """V3: Same MID + CAID + DBA name but multiple addresses.
-    CAID and MID use TRIM only (formal identifiers, case-sensitive).
-    DBA and address fields use UPPER+TRIM (free-text)."""
+    CAID and MID compared as-is (exact match). DBA and address use UPPER+TRIM."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
-                TRIM(CAST(CAID AS VARCHAR)) AS _n_caid,
-                TRIM(CAST(AcquirerMerchantID AS VARCHAR)) AS _n_mid,
+                CAST(CAID AS VARCHAR) AS _n_caid,
+                CAST(AcquirerMerchantID AS VARCHAR) AS _n_mid,
                 UPPER(TRIM(CAST(DBAName AS VARCHAR))) AS _n_dba,
                 UPPER(TRIM(CAST(Street AS VARCHAR))) || '|' ||
                     UPPER(TRIM(CAST(City AS VARCHAR))) || '|' ||
@@ -149,14 +148,14 @@ def check_v7_invalid_caids(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v8_same_address_different_mids(db: DuckDBEngine) -> pd.DataFrame:
     """V8: Same normalized address maps to different MIDs.
-    Normalizes address components to prevent whitespace/casing false positives."""
+    Address uses UPPER+TRIM (free-text). MID compared as-is (exact match)."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
                 UPPER(TRIM(CAST(Street AS VARCHAR))) AS _n_street,
                 UPPER(TRIM(CAST(City AS VARCHAR))) AS _n_city,
                 UPPER(TRIM(CAST(PostalCode AS VARCHAR))) AS _n_postal,
-                UPPER(TRIM(CAST(AcquirerMerchantID AS VARCHAR))) AS _n_mid
+                CAST(AcquirerMerchantID AS VARCHAR) AS _n_mid
             FROM ammf_output
             WHERE TRIM(CAST(Street AS VARCHAR)) != ''
               AND TRIM(CAST(City AS VARCHAR)) != ''
@@ -197,17 +196,16 @@ def check_v9_invalid_business_registration(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v10_same_mid_caid_different_names(db: DuckDBEngine) -> pd.DataFrame:
     """V10: Same MID + CAID but different DBA names or Legal names.
-    CAID and MID use TRIM only (formal identifiers, case-sensitive).
-    Names use UPPER+TRIM (free-text)."""
+    CAID and MID compared as-is (exact match). Names use UPPER+TRIM."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
-                TRIM(CAST(CAID AS VARCHAR)) AS _n_caid,
-                TRIM(CAST(AcquirerMerchantID AS VARCHAR)) AS _n_mid,
+                CAST(CAID AS VARCHAR) AS _n_caid,
+                CAST(AcquirerMerchantID AS VARCHAR) AS _n_mid,
                 UPPER(TRIM(CAST(DBAName AS VARCHAR))) AS _n_dba,
                 UPPER(TRIM(CAST(LegalName AS VARCHAR))) AS _n_legal
             FROM ammf_output
-            WHERE TRIM(CAST(CAID AS VARCHAR)) != ''
+            WHERE CAST(CAID AS VARCHAR) IS NOT NULL AND CAST(CAID AS VARCHAR) != ''
         ),
         grouped AS (
             SELECT _n_mid, _n_caid,
@@ -225,16 +223,15 @@ def check_v10_same_mid_caid_different_names(db: DuckDBEngine) -> pd.DataFrame:
 
 def check_v11_different_mids_same_caid(db: DuckDBEngine) -> pd.DataFrame:
     """V11: Different MIDs sharing the same CAID.
-    CAID and MID use TRIM only (formal identifiers, case-sensitive).
-    Excludes empty/null CAIDs."""
+    CAID and MID compared as-is (exact match). Excludes NULL/empty CAIDs."""
     return db.execute("""
         WITH normalized AS (
             SELECT *,
-                TRIM(CAST(CAID AS VARCHAR)) AS _n_caid,
-                TRIM(CAST(AcquirerMerchantID AS VARCHAR)) AS _n_mid
+                CAST(CAID AS VARCHAR) AS _n_caid,
+                CAST(AcquirerMerchantID AS VARCHAR) AS _n_mid
             FROM ammf_output
             WHERE CAID IS NOT NULL
-              AND TRIM(CAST(CAID AS VARCHAR)) != ''
+              AND CAST(CAID AS VARCHAR) != ''
         ),
         grouped AS (
             SELECT _n_caid,
@@ -328,7 +325,7 @@ VIOLATION_RULES = [
      "columns": ["AcquirerMerchantID", "CAID", "DBAName", "LegalName"],
      "func": check_v10_same_mid_caid_different_names},
     {"id": "V11", "name": "Different MIDs Same CAID",
-     "description": "Different MIDs but same CAID (exact match, trimmed)",
+     "description": "Different MIDs but same CAID (exact match, as-is)",
      "columns": ["AcquirerMerchantID", "CAID"],
      "func": check_v11_different_mids_same_caid},
     {"id": "V12", "name": "BASEIIName Copied to DBA/Legal",
