@@ -100,6 +100,7 @@ class CIBBINConfig(BaseModel):
 class PipelineRunRequest(BaseModel):
     job_id: str
     cib_bin_config: CIBBINConfig | None = None
+    selected_steps: list[str] | None = None  # None = all steps; e.g. ["schema_mapping","quality","validation"]
 
 
 class AMMFPreview(BaseModel):

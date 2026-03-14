@@ -17,6 +17,8 @@ async def run_pipeline(request: PipelineRunRequest, background_tasks: Background
     if request.cib_bin_config:
         job.cib_bin_config = request.cib_bin_config.model_dump()
 
+    job.selected_steps = request.selected_steps
+
     from agents.orchestrator import run_pipeline_async
     background_tasks.add_task(run_pipeline_async, job)
 
@@ -29,3 +31,21 @@ async def get_pipeline_status(job_id: str):
     if not job:
         raise HTTPException(404, "Job not found")
     return job.get_status()
+
+
+@router.get("/pipeline/sql/{job_id}")
+async def get_generated_sql(job_id: str):
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return {"sql": job.generated_sql}
+
+
+@router.get("/pipeline/llm-logs/{job_id}")
+async def get_llm_logs(job_id: str):
+    """Return all LLM call logs for the current session."""
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    from core.llm_client import llm_client
+    return llm_client.get_call_summary()

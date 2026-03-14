@@ -22,6 +22,7 @@ class Job:
         self.generated_sql: str | None = None
         self.ammf_dataframe: pd.DataFrame | None = None
         self.cib_bin_config: dict | None = None
+        self.selected_steps: list[str] | None = None  # None = all
         self.error: str | None = None
 
     def get_status(self) -> PipelineStatus:

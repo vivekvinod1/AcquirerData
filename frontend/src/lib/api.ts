@@ -7,6 +7,7 @@ import type {
   ViolationReport,
   AMMFPreview,
   CIBBINConfig,
+  LLMCallSummary,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -31,10 +32,18 @@ export async function uploadFiles(files: File[]): Promise<UploadResponse> {
   return res.json();
 }
 
-export async function runPipeline(jobId: string, cibBinConfig?: CIBBINConfig) {
+export async function runPipeline(
+  jobId: string,
+  cibBinConfig?: CIBBINConfig,
+  selectedSteps?: string[]
+) {
   return fetchAPI("/pipeline/run", {
     method: "POST",
-    body: JSON.stringify({ job_id: jobId, cib_bin_config: cibBinConfig }),
+    body: JSON.stringify({
+      job_id: jobId,
+      cib_bin_config: cibBinConfig,
+      selected_steps: selectedSteps,
+    }),
   });
 }
 
@@ -71,4 +80,12 @@ export function getAMMFDownloadUrl(jobId: string) {
 
 export function getReportsDownloadUrl(jobId: string) {
   return `${API_BASE}/reports/${jobId}/download`;
+}
+
+export async function getGeneratedSQL(jobId: string): Promise<{ sql: string | null }> {
+  return fetchAPI<{ sql: string | null }>(`/pipeline/sql/${jobId}`);
+}
+
+export async function getLLMLogs(jobId: string): Promise<LLMCallSummary> {
+  return fetchAPI<LLMCallSummary>(`/pipeline/llm-logs/${jobId}`);
 }

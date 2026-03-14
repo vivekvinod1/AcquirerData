@@ -85,3 +85,28 @@ export interface CIBBINConfig {
   acquirer_bid: number;
   acquirer_bin: number;
 }
+
+export interface LLMCallLog {
+  call_id: number;
+  method: string;
+  model: string;
+  system_prompt: string;
+  user_prompt: string;
+  output: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  duration_ms: number;
+  timestamp: number;
+  error: string | null;
+}
+
+export interface LLMCallSummary {
+  total_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_duration_ms: number;
+  calls: LLMCallLog[];
+}
