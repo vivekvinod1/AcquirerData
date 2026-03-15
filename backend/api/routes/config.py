@@ -429,6 +429,142 @@ Generate a resolution strategy with:
 
 
 # ---------------------------------------------------------------------------
+# AI Rule Generator
+# ---------------------------------------------------------------------------
+
+RULE_GENERATOR_SYSTEM_PROMPT = """You are a Visa AMMF (Acquirer Merchant Master File) data quality expert.
+Your task is to generate a DuckDB SQL query that detects a specific data quality violation
+in the `ammf_output` table.
+
+AMMF TABLE SCHEMA — the `ammf_output` table has these columns:
+  ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN,
+  AcquirerMerchantID, CAID, DBAName, LegalName, BASEIIName,
+  Street, City, StateProvinceCode, PostalCode, LocationCountry,
+  MCC1, MCC2, MCC3, MCC4, MCC5, MCC6, MCC7, MCC8, MCC9,
+  AggregatorID, AggregatorName, BusinessRegistrationID,
+  SubMerchantID, AcquirerAssignedMerchantID, MerchantType
+
+DQ RULE PATTERNS:
+- Simple value checks: WHERE TRIM(col) = '' OR col IS NULL
+- Cross-column checks: WHERE LOWER(TRIM(col1)) = LOWER(TRIM(col2))
+- Pattern checks: WHERE NOT regexp_matches(col, 'pattern')
+- Group checks (CTEs): WITH groups AS (SELECT ... GROUP BY ... HAVING COUNT(*) > 1)
+- Fuzzy matching: jaro_winkler_similarity(a, b) > threshold
+- Always include: SELECT *, 'Vxx' AS violation_id FROM ammf_output WHERE ...
+- The query must RETURN rows that VIOLATE the rule (i.e., the bad rows).
+- Use DuckDB SQL syntax.
+
+EXISTING RULES (for reference — do NOT duplicate these):
+- V1: Acquirer name appears in DBAName/LegalName/BASEIIName
+- V2: Street and City values are identical
+- V3: Same MID+CAID+DBA but multiple different addresses
+- V4: Invalid/suspicious address patterns (PO Box numbers, single chars)
+- V5: Invalid BASEIIName for PF/sub-merchant records
+- V6: ProcessorBINCIB/AcquirerBID/AcquirerBIN copied from AcquirerName
+- V7: Invalid CAID (too short, all zeros, non-numeric)
+- V8: Same address used by many different MIDs (address farming)
+- V9: Invalid BusinessRegistrationID (too short, all same digits, sequential)
+- V10: Same MID+CAID but different DBAName/LegalName
+- V11: Multiple different MIDs sharing a single CAID
+- V12: BASEIIName copied to DBAName or LegalName (identical values)
+- V13: Sub-merchants under same aggregator sharing identical tax IDs
+
+Generate a NEW rule that is DIFFERENT from the above. Be creative and think about
+real data quality issues that acquirers encounter with merchant data."""
+
+
+class GenerateRuleRequest(BaseModel):
+    description: str  # Natural language description of what to check
+    refinement: str | None = None  # Optional: "also check X" or "change Y"
+    previous_sql: str | None = None  # If refining, the previous SQL
+    previous_name: str | None = None
+    previous_columns: list[str] | None = None
+
+
+@router.post("/config/violation-rules/generate")
+async def generate_violation_rule(request: GenerateRuleRequest):
+    """Use LLM to generate a complete violation rule from a natural language description.
+
+    Supports both initial generation and iterative refinement.
+    """
+    from core.llm_client import llm_client
+
+    if request.refinement and request.previous_sql:
+        user_prompt = f"""Refine this existing violation rule:
+
+CURRENT RULE NAME: {request.previous_name or 'Unnamed'}
+CURRENT AFFECTED COLUMNS: {', '.join(request.previous_columns or [])}
+CURRENT SQL:
+{request.previous_sql}
+
+USER'S REFINEMENT REQUEST:
+{request.refinement}
+
+Generate an updated version of this rule incorporating the user's feedback.
+Keep what works, modify what the user asked to change."""
+    else:
+        user_prompt = f"""Generate a violation rule for the following check:
+
+USER'S DESCRIPTION:
+{request.description}
+
+Create a complete violation rule with:
+1. A concise rule name (like "Invalid Phone Format" or "Duplicate Merchant Entries")
+2. A clear description of what the rule detects
+3. The list of AMMF columns this rule examines
+4. A DuckDB SQL SELECT query that returns the violating rows from `ammf_output`
+
+The SQL must:
+- Start with SELECT *, 'Vxx' AS violation_id (use a placeholder ID)
+- Return rows that VIOLATE the rule (bad data)
+- Use DuckDB syntax (supports regexp_matches, jaro_winkler_similarity, etc.)
+- Be efficient and handle NULLs properly"""
+
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Short, descriptive rule name (e.g., 'Invalid Phone Format')"
+            },
+            "description": {
+                "type": "string",
+                "description": "Clear description of what this rule detects and why it matters"
+            },
+            "columns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of AMMF columns this rule examines"
+            },
+            "sql": {
+                "type": "string",
+                "description": "DuckDB SQL query that returns violating rows from ammf_output"
+            },
+            "explanation": {
+                "type": "string",
+                "description": "Step-by-step explanation of what the SQL does and why"
+            },
+            "suggested_id": {
+                "type": "string",
+                "description": "Suggested rule ID like V14, V15, etc."
+            },
+        },
+        "required": ["name", "description", "columns", "sql", "explanation", "suggested_id"],
+    }
+
+    try:
+        result = llm_client.structured_query(
+            RULE_GENERATOR_SYSTEM_PROMPT,
+            user_prompt,
+            output_schema,
+            label="AI Rule Generator",
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate rule: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Aggregate LLM Stats
 # ---------------------------------------------------------------------------
 

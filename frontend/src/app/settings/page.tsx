@@ -16,12 +16,14 @@ import {
   testViolationRule,
   generateResolutionStrategy,
   getLLMStats,
+  generateViolationRule,
   type DQRule,
   type ConfigViolationRule,
   type PromptConfig,
   type TestRuleResult,
   type ResolutionStrategy,
   type LLMStats,
+  type GeneratedRule,
 } from "@/lib/api";
 
 // ============================================================================
@@ -547,7 +549,7 @@ function ViolationRulesSection({
         <RuleEditorModal rule={editingRule} isNew={false} onSave={handleSaveEdit} onCancel={() => setEditingRule(null)} />
       )}
       {isCreating && (
-        <RuleEditorModal rule={null} isNew={true} onSave={handleCreate} onCancel={() => setIsCreating(false)} />
+        <AIRuleBuilderModal onSave={handleCreate} onCancel={() => setIsCreating(false)} />
       )}
       {resolutionStrategy && (
         <ResolutionStrategyModal strategy={resolutionStrategy} onClose={() => setResolutionStrategy(null)} />
@@ -638,6 +640,297 @@ function RuleEditorModal({
           >
             {isNew ? "Create Rule" : "Save Changes"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AI Rule Builder Modal
+// ============================================================================
+
+function AIRuleBuilderModal({
+  onSave,
+  onCancel,
+}: {
+  onSave: (data: { id: string; name: string; description: string; columns: string[]; sql: string }) => void;
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState<"describe" | "review">("describe");
+  const [prompt, setPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [refineInput, setRefineInput] = useState("");
+  const [refining, setRefining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Generated result (editable)
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [columns, setColumns] = useState("");
+  const [sql, setSql] = useState("");
+  const [explanation, setExplanation] = useState("");
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const result = await generateViolationRule(prompt);
+      setId(result.suggested_id);
+      setName(result.name);
+      setDescription(result.description);
+      setColumns(result.columns.join(", "));
+      setSql(result.sql);
+      setExplanation(result.explanation);
+      setStep("review");
+    } catch (err) {
+      setError(`${err}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRefine = async () => {
+    if (!refineInput.trim()) return;
+    setRefining(true);
+    setError(null);
+    try {
+      const result = await generateViolationRule(
+        prompt,
+        refineInput,
+        sql,
+        name,
+        columns.split(",").map(c => c.trim()).filter(Boolean),
+      );
+      setName(result.name);
+      setDescription(result.description);
+      setColumns(result.columns.join(", "));
+      setSql(result.sql);
+      setExplanation(result.explanation);
+      if (result.suggested_id) setId(result.suggested_id);
+      setRefineInput("");
+    } catch (err) {
+      setError(`${err}`);
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const examplePrompts = [
+    "Find merchants where the DBA name contains only numbers or special characters",
+    "Detect merchants with the same legal name but different tax IDs",
+    "Flag records where the postal code format doesn't match the country",
+    "Find merchants where the city name contains digits",
+    "Detect duplicate merchants with slightly different names at the same address",
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b border-visa-gray-200 bg-gradient-to-r from-purple-50 via-blue-50 to-indigo-50 rounded-t-2xl">
+          <h3 className="text-lg font-bold text-visa-navy flex items-center gap-2">
+            <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            AI Rule Builder
+          </h3>
+          <p className="text-sm text-visa-gray-500 mt-1">
+            {step === "describe"
+              ? "Describe what you want to check in plain English. AI will generate the SQL and metadata."
+              : "Review the generated rule. You can refine it with follow-up instructions or edit fields directly."}
+          </p>
+        </div>
+
+        {/* Step indicator */}
+        <div className="flex items-center gap-3 px-6 py-3 bg-visa-gray-50 border-b border-visa-gray-200">
+          <div className={`flex items-center gap-2 text-xs font-semibold ${step === "describe" ? "text-purple-700" : "text-visa-gray-400"}`}>
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] ${step === "describe" ? "bg-purple-600 text-white" : "bg-visa-gray-200 text-visa-gray-500"}`}>1</span>
+            Describe
+          </div>
+          <div className="w-8 h-px bg-visa-gray-300" />
+          <div className={`flex items-center gap-2 text-xs font-semibold ${step === "review" ? "text-purple-700" : "text-visa-gray-400"}`}>
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] ${step === "review" ? "bg-purple-600 text-white" : "bg-visa-gray-200 text-visa-gray-500"}`}>2</span>
+            Review & Save
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {step === "describe" && (
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-visa-gray-700 mb-2">
+                  What data quality issue should this rule detect?
+                </label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="w-full border border-visa-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-400 outline-none transition resize-y leading-relaxed"
+                  rows={4}
+                  placeholder="e.g., Find merchants where the DBA name is suspiciously short (less than 3 characters) or contains only generic words like 'TEST' or 'MERCHANT'"
+                  autoFocus
+                />
+              </div>
+
+              {/* Example prompts */}
+              <div>
+                <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Example ideas</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {examplePrompts.map((ex, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPrompt(ex)}
+                      className="px-3 py-1.5 text-xs text-visa-gray-600 bg-visa-gray-100 rounded-lg hover:bg-purple-50 hover:text-purple-700 transition text-left"
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && <ErrorBanner message={error} />}
+            </div>
+          )}
+
+          {step === "review" && (
+            <div className="space-y-5">
+              {/* AI Explanation */}
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                <div className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <div>
+                    <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">AI Explanation</span>
+                    <p className="text-sm text-purple-800 mt-1 leading-relaxed whitespace-pre-line">{explanation}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Editable fields */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-visa-gray-700 mb-1.5">Rule ID</label>
+                  <input type="text" value={id} onChange={(e) => setId(e.target.value.toUpperCase())}
+                    className="w-full border border-visa-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-visa-navy/20 focus:border-visa-navy outline-none transition"
+                    placeholder="V14" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-visa-gray-700 mb-1.5">Name</label>
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+                    className="w-full border border-visa-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-visa-navy/20 focus:border-visa-navy outline-none transition" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-visa-gray-700 mb-1.5">Description</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+                  className="w-full border border-visa-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-visa-navy/20 focus:border-visa-navy outline-none transition resize-y" rows={2} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-visa-gray-700 mb-1.5">
+                  Target Columns <span className="text-visa-gray-400 font-normal">(comma-separated)</span>
+                </label>
+                <input type="text" value={columns} onChange={(e) => setColumns(e.target.value)}
+                  className="w-full border border-visa-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-visa-navy/20 focus:border-visa-navy outline-none transition" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-visa-gray-700 mb-1.5">
+                  SQL Query <span className="text-visa-gray-400 font-normal">(DuckDB dialect)</span>
+                </label>
+                <textarea value={sql} onChange={(e) => setSql(e.target.value)}
+                  className="w-full border border-visa-gray-300 rounded-xl px-4 py-3 text-sm font-mono bg-visa-gray-50 focus:ring-2 focus:ring-visa-navy/20 focus:border-visa-navy outline-none transition resize-y leading-relaxed" rows={10}
+                  spellCheck={false} />
+              </div>
+
+              {/* Refine with AI */}
+              <div className="border border-purple-200 rounded-xl p-4 bg-purple-50/50">
+                <label className="block text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">
+                  Refine with AI
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={refineInput}
+                    onChange={(e) => setRefineInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !refining && handleRefine()}
+                    className="flex-1 border border-purple-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-400 outline-none transition bg-white"
+                    placeholder="e.g., Also check for names with only uppercase letters, or exclude records where MerchantType = 'PF'"
+                    disabled={refining}
+                  />
+                  <button
+                    onClick={handleRefine}
+                    disabled={refining || !refineInput.trim()}
+                    className="px-4 py-2 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-1.5 flex-shrink-0"
+                  >
+                    {refining ? (
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                    {refining ? "Refining..." : "Refine"}
+                  </button>
+                </div>
+              </div>
+
+              {error && <ErrorBanner message={error} />}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-visa-gray-200 bg-visa-gray-50/50 rounded-b-2xl flex justify-between">
+          <div>
+            {step === "review" && (
+              <button onClick={() => setStep("describe")} className="px-4 py-2 text-sm text-visa-gray-600 hover:text-visa-navy transition flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back to Description
+              </button>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onCancel} className="px-5 py-2.5 text-sm font-medium text-visa-gray-600 bg-white border border-visa-gray-300 rounded-xl hover:bg-visa-gray-50 transition">
+              Cancel
+            </button>
+            {step === "describe" ? (
+              <button
+                onClick={handleGenerate}
+                disabled={generating || !prompt.trim()}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-xl hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-2"
+              >
+                {generating ? (
+                  <>
+                    <span className="inline-block w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                    Generating Rule...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Generate with AI
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => onSave({ id, name, description, columns: columns.split(",").map(c => c.trim()).filter(Boolean), sql })}
+                disabled={!id || !name || !sql}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-visa-navy rounded-xl hover:bg-visa-blue disabled:opacity-50 transition"
+              >
+                Create Rule
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

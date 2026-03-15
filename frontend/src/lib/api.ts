@@ -372,6 +372,39 @@ export async function getLLMStats(): Promise<LLMStats> {
   return fetchAPI<LLMStats>("/config/llm-stats");
 }
 
+// ---------------------------------------------------------------------------
+// AI Rule Generator
+// ---------------------------------------------------------------------------
+
+export interface GeneratedRule {
+  status: "success";
+  name: string;
+  description: string;
+  columns: string[];
+  sql: string;
+  explanation: string;
+  suggested_id: string;
+}
+
+export async function generateViolationRule(
+  description: string,
+  refinement?: string,
+  previousSql?: string,
+  previousName?: string,
+  previousColumns?: string[],
+): Promise<GeneratedRule> {
+  return fetchAPI<GeneratedRule>("/config/violation-rules/generate", {
+    method: "POST",
+    body: JSON.stringify({
+      description,
+      refinement: refinement || null,
+      previous_sql: previousSql || null,
+      previous_name: previousName || null,
+      previous_columns: previousColumns || null,
+    }),
+  });
+}
+
 export async function generateResolutionStrategy(
   ruleId: string,
   ruleName: string,
