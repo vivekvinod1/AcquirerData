@@ -42,7 +42,8 @@ export async function uploadFiles(files: File[]): Promise<UploadResponse> {
 export async function runPipeline(
   jobId: string,
   cibBinConfig?: CIBBINConfig,
-  selectedSteps?: string[]
+  selectedSteps?: string[],
+  selectedViolations?: string[]
 ) {
   return fetchAPI("/pipeline/run", {
     method: "POST",
@@ -50,6 +51,7 @@ export async function runPipeline(
       job_id: jobId,
       cib_bin_config: cibBinConfig,
       selected_steps: selectedSteps,
+      selected_violations: selectedViolations,
     }),
   });
 }

@@ -41,6 +41,22 @@ export default function ViolationsPage({ params }: { params: Promise<{ jobId: st
           Back to Dashboard
         </button>
       </div>
+      {/* Tip banner for web research */}
+      {report.total_violations > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+          <svg className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-sm text-blue-800 font-medium">Investigate & Research Merchants</p>
+            <p className="text-xs text-blue-700 mt-1">
+              Click <strong>&quot;Investigate&quot;</strong> on any violation to see all affected rows.
+              Then use the <strong>&quot;Research&quot;</strong> button on individual merchants to launch an
+              AI-powered web search that finds correct business details and suggests fixes.
+            </p>
+          </div>
+        </div>
+      )}
       <ViolationTable report={report} jobId={jobId} onViolationsUpdated={loadReport} />
     </div>
   );

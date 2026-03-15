@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import PipelineStepper from "@/components/PipelineStepper";
 import IngestionReview from "@/components/IngestionReview";
 import ChatPanel from "@/components/ChatPanel";
-import { getPipelineStatus, runPipeline, getReferenceValues } from "@/lib/api";
-import type { PipelineStatus, CIBBINConfig, ReferenceValues } from "@/lib/types";
+import ViolationRuleSelector from "@/components/ViolationRuleSelector";
+import { getPipelineStatus, runPipeline, getReferenceValues, getViolationRules } from "@/lib/api";
+import { DEFAULT_UNCHECKED_VIOLATIONS } from "@/lib/constants";
+import type { PipelineStatus, CIBBINConfig, ReferenceValues, ViolationRuleInfo } from "@/lib/types";
 
 /** Steps shown in the pre-start selector (validation-only mode) */
 const AVAILABLE_STEPS = [
@@ -95,6 +97,8 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
   const [refValues, setRefValues] = useState<ReferenceValues | null>(null);
   const [loadingRef, setLoadingRef] = useState(false);
   const [mode, setMode] = useState<"full" | "validation_only">("full");
+  const [violationRules, setViolationRules] = useState<ViolationRuleInfo[]>([]);
+  const [selectedViolations, setSelectedViolations] = useState<Set<string>>(new Set());
 
   const pollStatus = useCallback(async () => {
     try {
@@ -114,6 +118,16 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
       .then((rv) => setRefValues(rv))
       .catch(() => {})
       .finally(() => setLoadingRef(false));
+    // Load violation rules for the selector
+    getViolationRules()
+      .then((rules) => {
+        setViolationRules(rules);
+        // Default: all checked except V5, V11, V12
+        setSelectedViolations(
+          new Set(rules.map((r) => r.id).filter((id) => !DEFAULT_UNCHECKED_VIOLATIONS.has(id)))
+        );
+      })
+      .catch(() => {});
   }, [pollStatus, jobId]);
 
   // Polling: runs while pipeline is active, stops at terminal + awaiting_approval states
@@ -155,19 +169,21 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
 
   const handleStart = async () => {
     setRunning(true);
+    const violations = Array.from(selectedViolations);
     if (mode === "full") {
       // Full pipeline: Phase 1 (ingestion) runs automatically, no step selection needed
+      // Violations are selected during the review gate, but we store the initial selection
       const hasAnyValue =
         cibConfig.processor_name ||
         cibConfig.processor_bin_cib ||
         cibConfig.acquirer_name ||
         cibConfig.acquirer_bid ||
         cibConfig.acquirer_bin;
-      await runPipeline(jobId, hasAnyValue ? cibConfig : undefined);
+      await runPipeline(jobId, hasAnyValue ? cibConfig : undefined, undefined, violations);
     } else {
-      // Validation-only mode: pass selected steps
+      // Validation-only mode: pass selected steps + violations
       const steps = Array.from(selectedSteps);
-      await runPipeline(jobId, undefined, steps);
+      await runPipeline(jobId, undefined, steps, violations);
     }
   };
 
@@ -359,6 +375,37 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
                   numeric
                 />
               </div>
+            </div>
+          )}
+
+          {/* Violation Rule Selector */}
+          {violationRules.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200 p-6">
+              <div className="mb-4">
+                <h3 className="font-semibold text-visa-navy">Violation Rules to Execute</h3>
+                <p className="text-sm text-visa-gray-500 mt-1">
+                  Select which Visa compliance rules to check. V5, V11, V12 are unchecked by default.
+                  {mode === "full" && " You can also adjust these during the review step."}
+                </p>
+              </div>
+              <ViolationRuleSelector
+                rules={violationRules}
+                selected={selectedViolations}
+                onToggle={(id) => {
+                  setSelectedViolations((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }}
+                onSelectAll={() => setSelectedViolations(new Set(violationRules.map((r) => r.id)))}
+                onSelectDefaults={() =>
+                  setSelectedViolations(
+                    new Set(violationRules.map((r) => r.id).filter((id) => !DEFAULT_UNCHECKED_VIOLATIONS.has(id)))
+                  )
+                }
+              />
             </div>
           )}
 
