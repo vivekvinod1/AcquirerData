@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from core.models import PipelineStep, PipelineStatus, SchemaMapping, QualityReport, ViolationReport
+from core.models import PipelineStep, PipelineStatus, JobSummary, SchemaMapping, QualityReport, ViolationReport
 from core.db_engine import DuckDBEngine
 import pandas as pd
 
@@ -8,6 +8,7 @@ import pandas as pd
 class Job:
     def __init__(self, job_id: str):
         self.job_id = job_id
+        self.created_at: str = datetime.now().isoformat()
         self.step = PipelineStep.UPLOADED
         self.progress_pct = 0
         self.messages: list[str] = []
@@ -40,6 +41,21 @@ class Job:
             messages=self.messages[-20:],
             started_at=self.started_at,
             completed_at=self.completed_at,
+        )
+
+    def get_summary(self) -> JobSummary:
+        total_rows = sum(len(df) for df in self.tables.values()) if self.tables else 0
+        violation_count = self.violation_report.total_violations if self.violation_report else None
+        return JobSummary(
+            job_id=self.job_id,
+            step=self.step,
+            progress_pct=self.progress_pct,
+            started_at=self.started_at,
+            completed_at=self.completed_at,
+            created_at=self.created_at,
+            file_names=[f.name for f in self.files],
+            total_rows=total_rows,
+            violation_count=violation_count,
         )
 
     def add_message(self, msg: str):

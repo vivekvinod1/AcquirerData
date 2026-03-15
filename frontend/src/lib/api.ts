@@ -14,6 +14,7 @@ import type {
   WebResearchResult,
   ViolationRows,
   ViolationRuleInfo,
+  JobSummary,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -208,4 +209,12 @@ export async function sendChatMessage(
 
 export async function getViolationRules(): Promise<ViolationRuleInfo[]> {
   return fetchAPI<ViolationRuleInfo[]>("/violations/rules");
+}
+
+// ---------------------------------------------------------------------------
+// Job History
+// ---------------------------------------------------------------------------
+
+export async function listJobs(): Promise<JobSummary[]> {
+  return fetchAPI<JobSummary[]>("/jobs");
 }

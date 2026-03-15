@@ -1,3 +1,15 @@
+export interface JobSummary {
+  job_id: string;
+  step: string;
+  progress_pct: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  file_names: string[];
+  total_rows: number;
+  violation_count: number | null;
+}
+
 export interface FileInfo {
   name: string;
   sheets: string[];

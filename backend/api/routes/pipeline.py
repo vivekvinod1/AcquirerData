@@ -1,10 +1,19 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from core.job_store import job_store
-from core.models import PipelineStatus, PipelineRunRequest, PipelineContinueRequest, PipelineStep
+from core.models import PipelineStatus, PipelineRunRequest, PipelineContinueRequest, PipelineStep, JobSummary
 import pandas as pd
 import re
 
 router = APIRouter()
+
+
+@router.get("/jobs", response_model=list[JobSummary])
+async def list_jobs():
+    """Return summaries of all pipeline runs, most recent first."""
+    jobs = [job_store.get_job(jid) for jid in job_store.list_jobs()]
+    summaries = [j.get_summary() for j in jobs if j is not None]
+    summaries.sort(key=lambda s: s.created_at or "", reverse=True)
+    return summaries
 
 
 @router.post("/pipeline/run")

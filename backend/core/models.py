@@ -100,6 +100,18 @@ class CIBBINConfig(BaseModel):
     acquirer_bin: int
 
 
+class JobSummary(BaseModel):
+    job_id: str
+    step: PipelineStep
+    progress_pct: int
+    started_at: str | None = None
+    completed_at: str | None = None
+    created_at: str = ""
+    file_names: list[str] = []
+    total_rows: int = 0
+    violation_count: int | None = None
+
+
 class PipelineRunRequest(BaseModel):
     job_id: str
     cib_bin_config: CIBBINConfig | None = None

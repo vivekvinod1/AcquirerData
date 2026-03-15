@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import FileUploader from "@/components/FileUploader";
+import RunHistory from "@/components/RunHistory";
 import type { FileInfo } from "@/lib/types";
 
 export default function Home() {
@@ -15,7 +16,7 @@ export default function Home() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto">
       <div className="text-center mb-8">
         <h2 className="text-3xl font-bold text-visa-navy">Upload Acquirer Data</h2>
         <p className="mt-2 text-visa-gray-500">
@@ -24,9 +25,11 @@ export default function Home() {
         </p>
       </div>
 
-      <FileUploader onJobCreated={handleJobCreated} />
+      <div className="max-w-2xl mx-auto">
+        <FileUploader onJobCreated={handleJobCreated} />
+      </div>
 
-      <div className="mt-12 grid grid-cols-3 gap-6 text-center">
+      <div className="mt-12 grid grid-cols-3 gap-6 text-center max-w-2xl mx-auto">
         <div className="p-4 bg-white rounded-lg shadow-sm border border-visa-gray-200">
           <div className="text-2xl font-bold text-visa-navy">6</div>
           <div className="text-sm text-visa-gray-500 mt-1">AI Agents</div>
@@ -40,6 +43,8 @@ export default function Home() {
           <div className="text-sm text-visa-gray-500 mt-1">Violation Rules</div>
         </div>
       </div>
+
+      <RunHistory />
     </div>
   );
 }
