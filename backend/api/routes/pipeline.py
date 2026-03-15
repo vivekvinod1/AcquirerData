@@ -165,19 +165,28 @@ async def get_reference_values(job_id: str):
 
     search_order = list(ref_tables.items()) + list(other_tables.items())
 
-    field_defs = {
-        "processor_name": _PROCESSOR_NAME_PATTERNS,
-        "processor_bin_cib": _PROCESSOR_CIB_PATTERNS,
-        "acquirer_name": _ACQUIRER_NAME_PATTERNS,
-        "acquirer_bid": _ACQUIRER_BID_PATTERNS,
-        "acquirer_bin": _ACQUIRER_BIN_PATTERNS,
-    }
+    # Field definitions with preferred table source:
+    #   "ref"  = prefer master/reference tables (for names — typically unique there)
+    #   "txn"  = prefer transaction/non-reference tables (for numeric IDs)
+    field_defs: list[tuple[str, re.Pattern, str]] = [
+        ("processor_name",    _PROCESSOR_NAME_PATTERNS, "ref"),
+        ("processor_bin_cib", _PROCESSOR_CIB_PATTERNS,  "txn"),
+        ("acquirer_name",     _ACQUIRER_NAME_PATTERNS,   "ref"),
+        ("acquirer_bid",      _ACQUIRER_BID_PATTERNS,    "txn"),
+        ("acquirer_bin",      _ACQUIRER_BIN_PATTERNS,    "txn"),
+    ]
 
     results: dict[str, dict] = {}
     source_table: str | None = None
 
-    for field_key, pattern in field_defs.items():
-        for table_name, df in search_order:
+    for field_key, pattern, prefer in field_defs:
+        # Build search order: preferred table group first, then fallback
+        if prefer == "txn":
+            ordered = list(other_tables.items()) + list(ref_tables.items())
+        else:
+            ordered = list(ref_tables.items()) + list(other_tables.items())
+
+        for table_name, df in ordered:
             col = _find_column(df, pattern)
             if col:
                 vals = _distinct_non_empty(df[col])
