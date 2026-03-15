@@ -12,7 +12,7 @@ can export *all* rows, not just the 10-row sample.
 import pandas as pd
 from core.job_store import Job
 from core.models import ViolationReport, ViolationRecord
-from rules.violation_rules import VIOLATION_RULES
+from core.config_store import get_effective_rules
 
 # For group-based rules, which column(s) define the "group".
 # If a rule is missing here, group_count == row count.
@@ -53,13 +53,16 @@ def run_violation_checks(job: Job, selected_violations: list[str] | None = None)
     job.db.conn.execute('CREATE OR REPLACE TABLE ammf_output AS SELECT * FROM "_ammf_temp"')
     job.db.conn.unregister("_ammf_temp")
 
+    # Get all effective rules (built-in + custom, respects enabled/disabled from config)
+    all_rules = get_effective_rules()
+
     # Filter rules if selection provided
-    rules_to_run = VIOLATION_RULES
+    rules_to_run = all_rules
     if selected_violations is not None:
         selected_set = set(selected_violations)
-        rules_to_run = [r for r in VIOLATION_RULES if r["id"] in selected_set]
-        skipped = [r["id"] for r in VIOLATION_RULES if r["id"] not in selected_set]
-        job.add_message(f"Running {len(rules_to_run)} of {len(VIOLATION_RULES)} violation rules")
+        rules_to_run = [r for r in all_rules if r["id"] in selected_set]
+        skipped = [r["id"] for r in all_rules if r["id"] not in selected_set]
+        job.add_message(f"Running {len(rules_to_run)} of {len(all_rules)} violation rules")
         if skipped:
             job.add_message(f"Skipped rules: {', '.join(skipped)}")
 

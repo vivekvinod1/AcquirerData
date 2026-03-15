@@ -7,8 +7,8 @@ router = APIRouter()
 
 @router.get("/violations/rules")
 async def get_violation_rules():
-    """Return metadata for all 13 violation rules (for the UI rule selector)."""
-    from rules.violation_rules import VIOLATION_RULES
+    """Return metadata for all enabled violation rules (built-in + custom from config)."""
+    from core.config_store import get_effective_rules
     return [
         {
             "id": r["id"],
@@ -16,7 +16,7 @@ async def get_violation_rules():
             "description": r["description"],
             "columns": r["columns"],
         }
-        for r in VIOLATION_RULES
+        for r in get_effective_rules()
     ]
 
 

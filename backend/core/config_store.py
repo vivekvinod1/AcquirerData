@@ -59,9 +59,81 @@ def reset_custom_rules():
     _save_custom_rules(_custom_rules)
 
 
-# ---------------------------------------------------------------------------
-# DQ Rules metadata (read-only — these are hardcoded checks in the analyzer)
-# ---------------------------------------------------------------------------
+def get_effective_rules() -> list[dict]:
+    """Return the merged list of all violation rules (built-in + custom),
+    respecting config overrides (name, description, columns, sql, enabled).
+
+    Each returned dict has: id, name, description, columns, sql, func, enabled.
+    - Built-in rules may have overridden metadata or SQL from config.
+    - Custom rules (V14+) get a func that executes their SQL directly.
+    - Disabled rules are excluded.
+    """
+    from rules.violation_rules import VIOLATION_RULES, VIOLATION_SQL
+
+    custom = get_custom_rules()
+    effective = []
+
+    # 1. Built-in rules (may have custom overrides)
+    for rule in VIOLATION_RULES:
+        rid = rule["id"]
+        override = custom.get(rid, {})
+
+        # Skip disabled rules
+        if not override.get("enabled", True):
+            continue
+
+        # If SQL was overridden in config, create a new func that runs that SQL
+        custom_sql = override.get("sql")
+        if custom_sql:
+            def _make_sql_func(sql_str):
+                def _func(db):
+                    return db.execute(sql_str)
+                return _func
+            func = _make_sql_func(custom_sql)
+        else:
+            func = rule["func"]
+
+        effective.append({
+            "id": rid,
+            "name": override.get("name", rule["name"]),
+            "description": override.get("description", rule["description"]),
+            "columns": override.get("columns", rule["columns"]),
+            "sql": custom_sql or VIOLATION_SQL.get(rid, ""),
+            "func": func,
+        })
+
+    # 2. Purely custom rules (V14+) — not in VIOLATION_RULES
+    builtin_ids = {r["id"] for r in VIOLATION_RULES}
+    for rid, data in custom.items():
+        if rid in builtin_ids:
+            continue
+        if not data.get("enabled", True):
+            continue
+        sql = data.get("sql", "")
+        if not sql:
+            continue  # Can't execute without SQL
+
+        def _make_custom_func(sql_str):
+            def _func(db):
+                return db.execute(sql_str)
+            return _func
+
+        effective.append({
+            "id": rid,
+            "name": data.get("name", rid),
+            "description": data.get("description", ""),
+            "columns": data.get("columns", []),
+            "sql": sql,
+            "func": _make_custom_func(sql),
+        })
+
+    # Sort by ID (V1, V2, ... V13, V14, ...)
+    effective.sort(key=lambda r: (
+        int(r["id"][1:]) if r["id"][1:].isdigit() else 999,
+        r["id"]
+    ))
+    return effective
+
 
 # ---------------------------------------------------------------------------
 # Custom LLM Prompts

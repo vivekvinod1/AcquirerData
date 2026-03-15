@@ -48,8 +48,8 @@ def generate_remediation_plan(job: Job, rule_id: str) -> RemediationPlan:
     strategy = RULE_STRATEGIES.get(rule_id, RemediationStrategy.MANUAL_REVIEW)
 
     # Run the violation SQL to get all affected rows with their indices
-    from rules.violation_rules import VIOLATION_RULES
-    rule_def = next((r for r in VIOLATION_RULES if r["id"] == rule_id), None)
+    from core.config_store import get_effective_rules
+    rule_def = next((r for r in get_effective_rules() if r["id"] == rule_id), None)
     if not rule_def:
         raise ValueError(f"Unknown rule: {rule_id}")
 
@@ -349,8 +349,8 @@ def apply_fixes(job: Job, rule_id: str, fix_indices: list[int]) -> dict:
                 rows_modified += 1
 
     # Re-run just this rule to get new count
-    from rules.violation_rules import VIOLATION_RULES
-    rule_def = next((r for r in VIOLATION_RULES if r["id"] == rule_id), None)
+    from core.config_store import get_effective_rules
+    rule_def = next((r for r in get_effective_rules() if r["id"] == rule_id), None)
 
     job.db.conn.register("_ammf_temp", ammf)
     job.db.conn.execute('CREATE OR REPLACE TABLE ammf_output AS SELECT * FROM "_ammf_temp"')
