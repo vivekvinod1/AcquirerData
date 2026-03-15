@@ -13,9 +13,13 @@ import {
   updatePrompt,
   resetPrompt,
   resetAllPrompts,
+  testViolationRule,
+  generateResolutionStrategy,
   type DQRule,
   type ConfigViolationRule,
   type PromptConfig,
+  type TestRuleResult,
+  type ResolutionStrategy,
 } from "@/lib/api";
 
 /* ─── Severity badge ─── */
@@ -353,6 +357,149 @@ function LLMPromptsSection({
   );
 }
 
+/* ─── Resolution Strategy Modal ─── */
+function ResolutionStrategyModal({
+  strategy,
+  onClose,
+}: {
+  strategy: ResolutionStrategy;
+  onClose: () => void;
+}) {
+  const approachLabels: Record<string, { label: string; color: string }> = {
+    auto_fix: { label: "Auto-Fixable", color: "bg-green-100 text-green-700" },
+    web_research: { label: "Web Research Needed", color: "bg-blue-100 text-blue-700" },
+    manual_review: { label: "Manual Review Required", color: "bg-amber-100 text-amber-700" },
+  };
+  const approach = approachLabels[strategy.approach] || { label: strategy.approach, color: "bg-gray-100 text-gray-700" };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-visa-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-visa-navy">
+                Resolution Strategy: {strategy.rule_id}
+              </h3>
+              <p className="text-sm text-visa-gray-500 mt-1">AI-generated analysis of how to resolve violations</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${approach.color}`}>
+                {approach.label}
+              </span>
+              <span className="text-sm font-medium text-visa-gray-600">
+                {Math.round(strategy.confidence * 100)}% confidence
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Root Cause */}
+          <div>
+            <h4 className="text-sm font-semibold text-visa-navy mb-2 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Root Cause
+            </h4>
+            <p className="text-sm text-visa-gray-700 bg-visa-gray-50 rounded-lg p-4 leading-relaxed">
+              {strategy.root_cause}
+            </p>
+          </div>
+
+          {/* Fix Explanation */}
+          <div>
+            <h4 className="text-sm font-semibold text-visa-navy mb-2 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              Resolution Steps
+            </h4>
+            <p className="text-sm text-visa-gray-700 bg-visa-gray-50 rounded-lg p-4 leading-relaxed whitespace-pre-line">
+              {strategy.fix_explanation}
+            </p>
+          </div>
+
+          {/* Fix SQL */}
+          {strategy.fix_sql && (
+            <div>
+              <h4 className="text-sm font-semibold text-visa-navy mb-2 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                Fix SQL (DuckDB)
+              </h4>
+              <pre className="text-xs font-mono bg-visa-gray-900 text-green-400 rounded-lg p-4 overflow-x-auto max-h-64 overflow-y-auto leading-relaxed">
+                {strategy.fix_sql}
+              </pre>
+              <p className="text-xs text-visa-gray-400 mt-2">
+                This SQL can be applied to the <code>ammf_output</code> table to fix the violations.
+                Review carefully before executing.
+              </p>
+            </div>
+          )}
+
+          {/* Web Research Guidance */}
+          {strategy.web_research_guidance && (
+            <div>
+              <h4 className="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Web Research Guidance
+              </h4>
+              <p className="text-sm text-visa-gray-700 bg-blue-50 rounded-lg p-4 leading-relaxed whitespace-pre-line">
+                {strategy.web_research_guidance}
+              </p>
+            </div>
+          )}
+
+          {/* Manual Review Guidance */}
+          {strategy.manual_review_guidance && (
+            <div>
+              <h4 className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                Manual Review Required
+              </h4>
+              <p className="text-sm text-visa-gray-700 bg-amber-50 rounded-lg p-4 leading-relaxed whitespace-pre-line">
+                {strategy.manual_review_guidance}
+              </p>
+            </div>
+          )}
+
+          {/* Caveats */}
+          {strategy.caveats && strategy.caveats.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-visa-gray-600 mb-2">Caveats</h4>
+              <ul className="text-sm text-visa-gray-600 space-y-1">
+                {strategy.caveats.map((c, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="text-visa-gray-400 mt-0.5">-</span>
+                    <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-visa-gray-200 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-white bg-visa-navy rounded-lg hover:bg-visa-blue"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Settings Page ─── */
 export default function SettingsPage() {
   const router = useRouter();
@@ -363,6 +510,10 @@ export default function SettingsPage() {
   const [editingRule, setEditingRule] = useState<ConfigViolationRule | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [expandedSql, setExpandedSql] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, TestRuleResult>>({});
+  const [testingRule, setTestingRule] = useState<string | null>(null);
+  const [resolutionStrategy, setResolutionStrategy] = useState<ResolutionStrategy | null>(null);
+  const [generatingStrategy, setGeneratingStrategy] = useState<string | null>(null);
 
   const loadRules = async () => {
     try {
@@ -433,6 +584,51 @@ export default function SettingsPage() {
       loadRules();
     } catch {
       // ignore
+    }
+  };
+
+  const handleTestRule = async (rule: ConfigViolationRule) => {
+    setTestingRule(rule.id);
+    try {
+      const result = await testViolationRule(rule.sql);
+      setTestResults((prev) => ({ ...prev, [rule.id]: result }));
+      // Auto-expand SQL section to show results
+      setExpandedSql(rule.id);
+    } catch (err) {
+      setTestResults((prev) => ({
+        ...prev,
+        [rule.id]: {
+          status: "error",
+          error: `${err}`,
+          total_rows_flagged: 0,
+          total_ammf_rows: 0,
+          sample_rows: [],
+          columns: [],
+        },
+      }));
+      setExpandedSql(rule.id);
+    } finally {
+      setTestingRule(null);
+    }
+  };
+
+  const handleGenerateStrategy = async (rule: ConfigViolationRule) => {
+    setGeneratingStrategy(rule.id);
+    try {
+      const sampleRows = testResults[rule.id]?.sample_rows;
+      const result = await generateResolutionStrategy(
+        rule.id,
+        rule.name,
+        rule.description,
+        rule.columns,
+        rule.sql,
+        sampleRows as Record<string, unknown>[]
+      );
+      setResolutionStrategy(result);
+    } catch (err) {
+      alert(`Failed to generate strategy: ${err}`);
+    } finally {
+      setGeneratingStrategy(null);
     }
   };
 
@@ -543,25 +739,128 @@ export default function SettingsPage() {
                     ))}
                   </div>
 
-                  {/* SQL toggle */}
-                  <button
-                    onClick={() => setExpandedSql(expandedSql === rule.id ? null : rule.id)}
-                    className="mt-2 text-xs text-visa-gray-400 hover:text-visa-navy flex items-center gap-1"
-                  >
-                    <svg
-                      className={`w-3 h-3 transition-transform ${expandedSql === rule.id ? "rotate-90" : ""}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+                  {/* SQL toggle + Test/Resolution buttons */}
+                  <div className="flex items-center gap-3 mt-2">
+                    <button
+                      onClick={() => setExpandedSql(expandedSql === rule.id ? null : rule.id)}
+                      className="text-xs text-visa-gray-400 hover:text-visa-navy flex items-center gap-1"
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    {expandedSql === rule.id ? "Hide SQL" : "Show SQL"}
-                  </button>
+                      <svg
+                        className={`w-3 h-3 transition-transform ${expandedSql === rule.id ? "rotate-90" : ""}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      {expandedSql === rule.id ? "Hide SQL" : "Show SQL"}
+                    </button>
+                    <button
+                      onClick={() => handleTestRule(rule)}
+                      disabled={testingRule === rule.id || !rule.sql}
+                      className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {testingRule === rule.id ? (
+                        <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      )}
+                      Test Rule
+                    </button>
+                    <button
+                      onClick={() => handleGenerateStrategy(rule)}
+                      disabled={generatingStrategy === rule.id || !rule.sql}
+                      className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded hover:bg-purple-100 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {generatingStrategy === rule.id ? (
+                        <span className="inline-block w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                      )}
+                      {generatingStrategy === rule.id ? "Generating..." : "Resolution Strategy"}
+                    </button>
+                  </div>
+
                   {expandedSql === rule.id && (
-                    <pre className="mt-2 p-3 bg-visa-gray-900 text-green-400 rounded-lg text-xs overflow-x-auto max-h-48 overflow-y-auto font-mono">
-                      {rule.sql}
-                    </pre>
+                    <>
+                      <pre className="mt-2 p-3 bg-visa-gray-900 text-green-400 rounded-lg text-xs overflow-x-auto max-h-48 overflow-y-auto font-mono">
+                        {rule.sql}
+                      </pre>
+
+                      {/* Test Results */}
+                      {testResults[rule.id] && (
+                        <div className={`mt-2 p-3 rounded-lg text-sm ${
+                          testResults[rule.id].status === "error"
+                            ? "bg-red-50 border border-red-200"
+                            : testResults[rule.id].total_rows_flagged > 0
+                            ? "bg-amber-50 border border-amber-200"
+                            : "bg-green-50 border border-green-200"
+                        }`}>
+                          {testResults[rule.id].status === "error" ? (
+                            <div>
+                              <span className="font-semibold text-red-700">SQL Error: </span>
+                              <span className="text-red-600 text-xs font-mono">{testResults[rule.id].error}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="flex items-center gap-4 mb-2">
+                                <span className="font-semibold text-visa-navy">
+                                  {testResults[rule.id].total_rows_flagged.toLocaleString()} rows flagged
+                                </span>
+                                <span className="text-xs text-visa-gray-500">
+                                  out of {testResults[rule.id].total_ammf_rows.toLocaleString()} AMMF rows
+                                </span>
+                                {testResults[rule.id].total_rows_flagged === 0 && (
+                                  <span className="text-xs text-green-600 font-medium">No violations found</span>
+                                )}
+                              </div>
+                              {testResults[rule.id].sample_rows.length > 0 && (
+                                <div className="mt-2 overflow-x-auto">
+                                  <table className="text-xs w-full border-collapse">
+                                    <thead>
+                                      <tr>
+                                        {testResults[rule.id].columns.slice(0, 8).map((col) => (
+                                          <th key={col} className="px-2 py-1 text-left bg-visa-gray-100 border border-visa-gray-200 font-medium text-visa-gray-600 whitespace-nowrap">
+                                            {col}
+                                          </th>
+                                        ))}
+                                        {testResults[rule.id].columns.length > 8 && (
+                                          <th className="px-2 py-1 bg-visa-gray-100 border border-visa-gray-200 text-visa-gray-400">...</th>
+                                        )}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {testResults[rule.id].sample_rows.slice(0, 5).map((row, i) => (
+                                        <tr key={i}>
+                                          {testResults[rule.id].columns.slice(0, 8).map((col) => (
+                                            <td key={col} className="px-2 py-1 border border-visa-gray-200 max-w-32 truncate whitespace-nowrap">
+                                              {String(row[col] ?? "")}
+                                            </td>
+                                          ))}
+                                          {testResults[rule.id].columns.length > 8 && (
+                                            <td className="px-2 py-1 border border-visa-gray-200 text-visa-gray-400">...</td>
+                                          )}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                  {testResults[rule.id].total_rows_flagged > 5 && (
+                                    <p className="text-xs text-visa-gray-400 mt-1">
+                                      Showing 5 of {testResults[rule.id].total_rows_flagged.toLocaleString()} flagged rows
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -614,6 +913,14 @@ export default function SettingsPage() {
           isNew={true}
           onSave={handleCreate}
           onCancel={() => setIsCreating(false)}
+        />
+      )}
+
+      {/* Resolution Strategy Modal */}
+      {resolutionStrategy && (
+        <ResolutionStrategyModal
+          strategy={resolutionStrategy}
+          onClose={() => setResolutionStrategy(null)}
         />
       )}
     </div>

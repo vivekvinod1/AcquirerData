@@ -227,3 +227,202 @@ async def reset_all_prompts():
     from core.config_store import reset_prompts
     reset_prompts()
     return {"status": "reset"}
+
+
+# ---------------------------------------------------------------------------
+# Violation Rule Testing & Resolution Strategy
+# ---------------------------------------------------------------------------
+
+class TestRuleRequest(BaseModel):
+    sql: str
+    job_id: str | None = None  # If provided, run against that job's AMMF data
+
+
+class ResolutionStrategyRequest(BaseModel):
+    rule_id: str
+    rule_name: str
+    description: str
+    columns: list[str]
+    sql: str
+    sample_rows: list[dict] | None = None  # From a test run
+
+
+@router.post("/config/violation-rules/test")
+async def test_violation_rule(request: TestRuleRequest):
+    """Test a violation rule SQL against the most recent job's AMMF data.
+
+    Returns the row count and sample violated rows so the user can verify
+    the rule catches what they expect.
+    """
+    from core.job_store import job_store
+    from core.db_engine import DuckDBEngine
+
+    # Find a job with AMMF data
+    job = None
+    if request.job_id:
+        job = job_store.get_job(request.job_id)
+    else:
+        # Use most recent completed job
+        for j in reversed(list(job_store._jobs.values())):
+            if j.ammf_dataframe is not None:
+                job = j
+                break
+
+    if not job or job.ammf_dataframe is None:
+        raise HTTPException(
+            400,
+            "No AMMF data available to test against. Run the pipeline first to generate AMMF output."
+        )
+
+    # Register AMMF data as table and run the rule SQL
+    try:
+        job.db.conn.register("_ammf_temp", job.ammf_dataframe)
+        job.db.conn.execute('CREATE OR REPLACE TABLE ammf_output AS SELECT * FROM "_ammf_temp"')
+        job.db.conn.unregister("_ammf_temp")
+
+        result_df = job.db.execute(request.sql)
+        total = len(result_df)
+        sample = result_df.head(10).fillna("").to_dict(orient="records")
+
+        return {
+            "status": "success",
+            "total_rows_flagged": total,
+            "total_ammf_rows": len(job.ammf_dataframe),
+            "sample_rows": sample,
+            "columns": list(result_df.columns) if total > 0 else [],
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "total_rows_flagged": 0,
+            "total_ammf_rows": len(job.ammf_dataframe),
+            "sample_rows": [],
+            "columns": [],
+        }
+
+
+RESOLUTION_SYSTEM_PROMPT = """You are a Visa AMMF (Acquirer Merchant Master File) data quality expert.
+You are analyzing a violation rule that flags non-compliant merchant data and need to produce
+a resolution strategy — how to fix the flagged violations.
+
+Your output must be actionable and specific. For each violation rule:
+1. Explain the ROOT CAUSE — why does this violation typically occur in acquirer data?
+2. Determine the RESOLUTION APPROACH — one of:
+   - "auto_fix": Can be resolved programmatically with a SQL UPDATE (e.g., deriving values, trimming, de-duplication)
+   - "web_research": Needs real-world merchant data from web lookups (addresses, legal names, tax IDs)
+   - "manual_review": Requires human/acquirer judgment (e.g., which of two conflicting records is correct)
+3. If auto_fix is possible, generate a DuckDB SQL UPDATE statement that fixes the violations in the `ammf_output` table.
+   The UPDATE must be safe (idempotent, no data loss) and should include a WHERE clause that targets only affected rows.
+4. If web_research is needed, describe what data to look up and from where.
+5. If manual_review is needed, describe what decision the user needs to make.
+6. Rate your CONFIDENCE (0.0-1.0) in the proposed fix.
+7. List any CAVEATS or edge cases.
+
+AMMF Context:
+- 31 columns covering processor/acquirer identifiers, merchant names, addresses, MCCs, and tax IDs
+- DBAName = "Doing Business As" (consumer-facing name)
+- LegalName = official registered business name
+- BASEIIName = name from payment transactions, required for Payment Facilitator (PF) records
+- AcquirerMerchantID = unique merchant identifier (SubMerchantID for PF, AcquirerAssignedMerchantID for direct)
+- CAID = Card Acceptor ID from VisaNet settlement
+- AggregatorID/AggregatorName = Payment Facilitator / Marketplace identifiers
+
+Use DuckDB SQL syntax. The table is always `ammf_output`."""
+
+
+@router.post("/config/violation-rules/resolution-strategy")
+async def generate_resolution_strategy(request: ResolutionStrategyRequest):
+    """Use LLM to analyze a violation rule and generate a resolution strategy.
+
+    Returns root cause analysis, remediation approach, fix SQL (if auto-fixable),
+    and confidence rating.
+    """
+    from core.llm_client import llm_client
+
+    # Build context from the rule
+    sample_context = ""
+    if request.sample_rows and len(request.sample_rows) > 0:
+        sample_context = f"\n\nSAMPLE VIOLATED ROWS ({len(request.sample_rows)} shown):\n"
+        for i, row in enumerate(request.sample_rows[:5]):
+            # Only show relevant columns
+            relevant = {k: v for k, v in row.items()
+                       if k in request.columns or k in ("violation_id", "violated_column", "DBAName", "LegalName", "CAID", "AcquirerMerchantID")}
+            sample_context += f"  Row {i+1}: {relevant}\n"
+
+    user_prompt = f"""Analyze this AMMF violation rule and generate a resolution strategy:
+
+RULE ID: {request.rule_id}
+RULE NAME: {request.rule_name}
+DESCRIPTION: {request.description}
+AFFECTED COLUMNS: {', '.join(request.columns)}
+
+VIOLATION SQL (DuckDB):
+{request.sql}
+{sample_context}
+
+Generate a resolution strategy with:
+1. root_cause: Why this violation typically occurs (2-3 sentences)
+2. approach: One of "auto_fix", "web_research", or "manual_review"
+3. fix_sql: If approach is "auto_fix", a DuckDB UPDATE statement to fix it. Otherwise null.
+4. fix_explanation: Step-by-step explanation of what the fix does
+5. web_research_guidance: If approach is "web_research", what to look up and where
+6. manual_review_guidance: If approach is "manual_review", what decision the user must make
+7. confidence: 0.0-1.0 confidence in the fix
+8. caveats: List of edge cases or warnings"""
+
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "root_cause": {
+                "type": "string",
+                "description": "Why this violation typically occurs in acquirer data"
+            },
+            "approach": {
+                "type": "string",
+                "enum": ["auto_fix", "web_research", "manual_review"],
+                "description": "Recommended resolution approach"
+            },
+            "fix_sql": {
+                "type": ["string", "null"],
+                "description": "DuckDB UPDATE statement to fix violations (null if not auto-fixable)"
+            },
+            "fix_explanation": {
+                "type": "string",
+                "description": "Step-by-step explanation of the resolution"
+            },
+            "web_research_guidance": {
+                "type": ["string", "null"],
+                "description": "What to look up and where, if web research is needed"
+            },
+            "manual_review_guidance": {
+                "type": ["string", "null"],
+                "description": "What decision the user needs to make"
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Confidence in the proposed fix (0.0-1.0)"
+            },
+            "caveats": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Edge cases or warnings"
+            },
+        },
+        "required": ["root_cause", "approach", "fix_sql", "fix_explanation", "confidence", "caveats"],
+    }
+
+    try:
+        result = llm_client.structured_query(
+            RESOLUTION_SYSTEM_PROMPT,
+            user_prompt,
+            output_schema,
+            label=f"Resolution Strategy: {request.rule_id}",
+        )
+        return {
+            "status": "success",
+            "rule_id": request.rule_id,
+            **result,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate resolution strategy: {e}")

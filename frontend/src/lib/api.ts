@@ -314,3 +314,63 @@ export async function resetPrompt(key: string) {
 export async function resetAllPrompts() {
   return fetchAPI("/config/prompts/reset", { method: "POST" });
 }
+
+// ---------------------------------------------------------------------------
+// Violation Rule Testing & Resolution Strategy
+// ---------------------------------------------------------------------------
+
+export interface TestRuleResult {
+  status: "success" | "error";
+  error?: string;
+  total_rows_flagged: number;
+  total_ammf_rows: number;
+  sample_rows: Record<string, unknown>[];
+  columns: string[];
+}
+
+export interface ResolutionStrategy {
+  status: "success";
+  rule_id: string;
+  root_cause: string;
+  approach: "auto_fix" | "web_research" | "manual_review";
+  fix_sql: string | null;
+  fix_explanation: string;
+  web_research_guidance: string | null;
+  manual_review_guidance: string | null;
+  confidence: number;
+  caveats: string[];
+}
+
+export async function testViolationRule(
+  sql: string,
+  jobId?: string
+): Promise<TestRuleResult> {
+  return fetchAPI<TestRuleResult>("/config/violation-rules/test", {
+    method: "POST",
+    body: JSON.stringify({ sql, job_id: jobId }),
+  });
+}
+
+export async function generateResolutionStrategy(
+  ruleId: string,
+  ruleName: string,
+  description: string,
+  columns: string[],
+  sql: string,
+  sampleRows?: Record<string, unknown>[]
+): Promise<ResolutionStrategy> {
+  return fetchAPI<ResolutionStrategy>(
+    "/config/violation-rules/resolution-strategy",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        rule_id: ruleId,
+        rule_name: ruleName,
+        description,
+        columns,
+        sql,
+        sample_rows: sampleRows,
+      }),
+    }
+  );
+}
