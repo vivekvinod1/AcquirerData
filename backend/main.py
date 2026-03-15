@@ -25,7 +25,7 @@ app.include_router(chat.router, tags=["Chat"])
 app.include_router(config.router, tags=["Configuration"])
 
 
-BUILD_VERSION = "v3.0-ingestion-gates"
+BUILD_VERSION = "v3.1-settings-overhaul"
 
 
 @app.get("/health")
