@@ -220,3 +220,66 @@ export async function getViolationRules(): Promise<ViolationRuleInfo[]> {
 export async function listJobs(): Promise<JobSummary[]> {
   return fetchAPI<JobSummary[]>("/jobs");
 }
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+export interface DQRule {
+  id: string;
+  name: string;
+  description: string;
+  threshold: string;
+  severity: string;
+  editable: boolean;
+}
+
+export interface ConfigViolationRule {
+  id: string;
+  name: string;
+  description: string;
+  columns: string[];
+  sql: string;
+  is_custom: boolean;
+  is_modified: boolean;
+  enabled: boolean;
+}
+
+export async function getDQRules(): Promise<DQRule[]> {
+  return fetchAPI<DQRule[]>("/config/dq-rules");
+}
+
+export async function getConfigViolationRules(): Promise<ConfigViolationRule[]> {
+  return fetchAPI<ConfigViolationRule[]>("/config/violation-rules");
+}
+
+export async function updateViolationRule(
+  ruleId: string,
+  update: { name?: string; description?: string; columns?: string[]; sql?: string; enabled?: boolean }
+) {
+  return fetchAPI(`/config/violation-rules/${ruleId}`, {
+    method: "PUT",
+    body: JSON.stringify(update),
+  });
+}
+
+export async function createViolationRule(rule: {
+  id: string;
+  name: string;
+  description: string;
+  columns: string[];
+  sql: string;
+}) {
+  return fetchAPI("/config/violation-rules", {
+    method: "POST",
+    body: JSON.stringify(rule),
+  });
+}
+
+export async function deleteViolationRule(ruleId: string) {
+  return fetchAPI(`/config/violation-rules/${ruleId}`, { method: "DELETE" });
+}
+
+export async function resetViolationRules() {
+  return fetchAPI("/config/violation-rules/reset", { method: "POST" });
+}

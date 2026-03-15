@@ -290,6 +290,214 @@ def check_v13_submerchants_same_taxid(db: DuckDBEngine) -> pd.DataFrame:
     """)
 
 
+# ---------------------------------------------------------------------------
+# SQL templates for display/edit in config UI
+# ---------------------------------------------------------------------------
+VIOLATION_SQL = {
+    "V1": """SELECT *, 'V1' AS violation_id,
+    CASE
+        WHEN LOWER(TRIM(DBAName)) = LOWER(TRIM(AcquirerName)) OR
+             jaro_winkler_similarity(LOWER(TRIM(DBAName)), LOWER(TRIM(AcquirerName))) > 0.85
+            THEN 'DBAName'
+        WHEN LOWER(TRIM(LegalName)) = LOWER(TRIM(AcquirerName)) OR
+             jaro_winkler_similarity(LOWER(TRIM(LegalName)), LOWER(TRIM(AcquirerName))) > 0.85
+            THEN 'LegalName'
+        WHEN BASEIIName IS NOT NULL AND (
+             LOWER(TRIM(BASEIIName)) = LOWER(TRIM(AcquirerName)) OR
+             jaro_winkler_similarity(LOWER(TRIM(BASEIIName)), LOWER(TRIM(AcquirerName))) > 0.85)
+            THEN 'BASEIIName'
+    END AS violated_column
+FROM ammf_output
+WHERE LOWER(TRIM(DBAName)) = LOWER(TRIM(AcquirerName))
+   OR jaro_winkler_similarity(LOWER(TRIM(DBAName)), LOWER(TRIM(AcquirerName))) > 0.85
+   OR LOWER(TRIM(LegalName)) = LOWER(TRIM(AcquirerName))
+   OR jaro_winkler_similarity(LOWER(TRIM(LegalName)), LOWER(TRIM(AcquirerName))) > 0.85
+   OR (BASEIIName IS NOT NULL AND (
+       LOWER(TRIM(BASEIIName)) = LOWER(TRIM(AcquirerName)) OR
+       jaro_winkler_similarity(LOWER(TRIM(BASEIIName)), LOWER(TRIM(AcquirerName))) > 0.85))""",
+
+    "V2": """SELECT *, 'V2' AS violation_id
+FROM ammf_output
+WHERE LOWER(TRIM(Street)) = LOWER(TRIM(City))
+   OR (LENGTH(TRIM(City)) > 3
+       AND LOWER(TRIM(regexp_replace(Street, '[0-9,.\\-#]', '', 'g'))) = LOWER(TRIM(City))
+       AND LENGTH(TRIM(regexp_replace(Street, '[0-9,.\\-#]', '', 'g'))) > 3)""",
+
+    "V3": """WITH normalized AS (
+    SELECT *,
+        UPPER(REPLACE(CAST(CAID AS VARCHAR), ' ', '')) AS _n_caid,
+        UPPER(REPLACE(CAST(AcquirerMerchantID AS VARCHAR), ' ', '')) AS _n_mid,
+        UPPER(TRIM(CAST(DBAName AS VARCHAR))) AS _n_dba,
+        UPPER(TRIM(CAST(Street AS VARCHAR))) || '|' ||
+            UPPER(TRIM(CAST(City AS VARCHAR))) || '|' ||
+            UPPER(TRIM(CAST(PostalCode AS VARCHAR))) AS _addr
+    FROM ammf_output
+),
+grouped AS (
+    SELECT _n_mid, _n_caid, _n_dba,
+           COUNT(DISTINCT _addr) AS addr_count
+    FROM normalized
+    WHERE _n_caid IS NOT NULL AND _n_caid != ''
+    GROUP BY _n_mid, _n_caid, _n_dba
+    HAVING COUNT(DISTINCT _addr) > 1
+)
+SELECT a.*, 'V3' AS violation_id
+FROM normalized a
+JOIN grouped g ON a._n_mid = g._n_mid
+    AND a._n_caid = g._n_caid AND a._n_dba = g._n_dba""",
+
+    "V4": """SELECT *, 'V4' AS violation_id
+FROM ammf_output
+WHERE LOWER(TRIM(Street)) LIKE '%p.o.%'
+   OR LOWER(TRIM(Street)) LIKE '%po box%'
+   OR LOWER(TRIM(Street)) LIKE '%p o box%'
+   OR LENGTH(TRIM(Street)) < 5
+   OR (LENGTH(TRIM(Street)) > 1 AND
+       TRIM(Street) = REPEAT(SUBSTRING(TRIM(Street), 1, 1), LENGTH(TRIM(Street))))
+   OR LOWER(TRIM(Street)) LIKE '%test%address%'
+   OR LOWER(TRIM(Street)) IN ('xxx', 'xxxx', 'xxxxx', 'na', 'n/a', 'none', 'null', 'tbd', '.')
+   OR LOWER(TRIM(City)) IN ('na', 'n/a', 'none', 'null', 'tbd', '.')
+   OR LENGTH(TRIM(City)) < 2""",
+
+    "V5": """SELECT *, 'V5' AS violation_id
+FROM ammf_output
+WHERE (AggregatorName IS NOT NULL AND TRIM(CAST(AggregatorName AS VARCHAR)) != '' AND (
+    BASEIIName IS NULL
+    OR TRIM(CAST(BASEIIName AS VARCHAR)) = ''
+    OR LOWER(TRIM(CAST(BASEIIName AS VARCHAR))) = LOWER(TRIM(CAST(AcquirerName AS VARCHAR)))
+    OR LOWER(TRIM(CAST(BASEIIName AS VARCHAR))) = LOWER(TRIM(CAST(DBAName AS VARCHAR)))
+    OR LOWER(TRIM(CAST(BASEIIName AS VARCHAR))) = LOWER(TRIM(CAST(LegalName AS VARCHAR)))
+))""",
+
+    "V6": """SELECT *, 'V6' AS violation_id
+FROM ammf_output
+WHERE (TRY_CAST(ProcessorBINCIB AS BIGINT) IS NOT NULL
+       AND TRY_CAST(AcquirerBID AS BIGINT) IS NOT NULL
+       AND TRY_CAST(ProcessorBINCIB AS BIGINT) = TRY_CAST(AcquirerBID AS BIGINT)
+       AND TRY_CAST(ProcessorBINCIB AS BIGINT) != 0)
+   OR (TRY_CAST(ProcessorBINCIB AS BIGINT) IS NOT NULL
+       AND TRY_CAST(AcquirerBIN AS BIGINT) IS NOT NULL
+       AND TRY_CAST(ProcessorBINCIB AS BIGINT) = TRY_CAST(AcquirerBIN AS BIGINT)
+       AND TRY_CAST(ProcessorBINCIB AS BIGINT) != 0)
+   OR (TRY_CAST(AcquirerBID AS BIGINT) IS NOT NULL
+       AND TRY_CAST(AcquirerBIN AS BIGINT) IS NOT NULL
+       AND TRY_CAST(AcquirerBID AS BIGINT) = TRY_CAST(AcquirerBIN AS BIGINT)
+       AND TRY_CAST(AcquirerBID AS BIGINT) != 0)""",
+
+    "V7": """SELECT *, 'V7' AS violation_id
+FROM ammf_output
+WHERE CAID IS NULL
+   OR TRIM(CAST(CAID AS VARCHAR)) = ''
+   OR LENGTH(TRIM(CAST(CAID AS VARCHAR))) < 3
+   OR LENGTH(TRIM(CAST(CAID AS VARCHAR))) > 15
+   OR regexp_matches(TRIM(CAST(CAID AS VARCHAR)), '^[^a-zA-Z0-9]+$')""",
+
+    "V8": """WITH normalized AS (
+    SELECT *,
+        UPPER(TRIM(CAST(Street AS VARCHAR))) AS _n_street,
+        UPPER(TRIM(CAST(City AS VARCHAR))) AS _n_city,
+        UPPER(TRIM(CAST(PostalCode AS VARCHAR))) AS _n_postal,
+        UPPER(REPLACE(CAST(AcquirerMerchantID AS VARCHAR), ' ', '')) AS _n_mid
+    FROM ammf_output
+    WHERE TRIM(CAST(Street AS VARCHAR)) != ''
+      AND TRIM(CAST(City AS VARCHAR)) != ''
+      AND TRIM(CAST(PostalCode AS VARCHAR)) != ''
+),
+grouped AS (
+    SELECT _n_street, _n_city, _n_postal,
+           COUNT(DISTINCT _n_mid) AS mid_count
+    FROM normalized
+    GROUP BY _n_street, _n_city, _n_postal
+    HAVING COUNT(DISTINCT _n_mid) > 1
+)
+SELECT a.*, 'V8' AS violation_id
+FROM normalized a
+JOIN grouped g ON a._n_street = g._n_street
+    AND a._n_city = g._n_city AND a._n_postal = g._n_postal""",
+
+    "V9": """SELECT *, 'V9' AS violation_id
+FROM ammf_output
+WHERE BusinessRegistrationID IS NOT NULL
+  AND TRIM(CAST(BusinessRegistrationID AS VARCHAR)) != ''
+  AND (
+    LENGTH(TRIM(CAST(BusinessRegistrationID AS VARCHAR))) < 3
+    OR UPPER(TRIM(CAST(BusinessRegistrationID AS VARCHAR))) IN ('0', '00', '000', 'NA', 'N/A', 'NONE', 'NULL', 'TBD')
+    OR regexp_matches(TRIM(CAST(BusinessRegistrationID AS VARCHAR)), '^[^a-zA-Z0-9]+$')
+    OR (LENGTH(TRIM(CAST(BusinessRegistrationID AS VARCHAR))) > 1
+        AND TRIM(CAST(BusinessRegistrationID AS VARCHAR)) =
+           REPEAT(SUBSTRING(TRIM(CAST(BusinessRegistrationID AS VARCHAR)), 1, 1),
+                  LENGTH(TRIM(CAST(BusinessRegistrationID AS VARCHAR)))))
+)""",
+
+    "V10": """WITH normalized AS (
+    SELECT *,
+        UPPER(REPLACE(CAST(CAID AS VARCHAR), ' ', '')) AS _n_caid,
+        UPPER(REPLACE(CAST(AcquirerMerchantID AS VARCHAR), ' ', '')) AS _n_mid,
+        UPPER(TRIM(CAST(DBAName AS VARCHAR))) AS _n_dba,
+        UPPER(TRIM(CAST(LegalName AS VARCHAR))) AS _n_legal
+    FROM ammf_output
+    WHERE UPPER(REPLACE(CAST(CAID AS VARCHAR), ' ', '')) IS NOT NULL
+      AND UPPER(REPLACE(CAST(CAID AS VARCHAR), ' ', '')) != ''
+),
+grouped AS (
+    SELECT _n_mid, _n_caid,
+           COUNT(DISTINCT _n_dba) AS dba_count,
+           COUNT(DISTINCT _n_legal) AS legal_count
+    FROM normalized
+    GROUP BY _n_mid, _n_caid
+    HAVING COUNT(DISTINCT _n_dba) > 1 OR COUNT(DISTINCT _n_legal) > 1
+)
+SELECT a.*, 'V10' AS violation_id
+FROM normalized a
+JOIN grouped g ON a._n_mid = g._n_mid AND a._n_caid = g._n_caid""",
+
+    "V11": """WITH normalized AS (
+    SELECT *,
+        UPPER(REPLACE(CAST(CAID AS VARCHAR), ' ', '')) AS _n_caid,
+        UPPER(REPLACE(CAST(AcquirerMerchantID AS VARCHAR), ' ', '')) AS _n_mid
+    FROM ammf_output
+    WHERE CAID IS NOT NULL
+      AND UPPER(REPLACE(CAST(CAID AS VARCHAR), ' ', '')) != ''
+),
+grouped AS (
+    SELECT _n_caid,
+           COUNT(DISTINCT _n_mid) AS mid_count
+    FROM normalized
+    GROUP BY _n_caid
+    HAVING COUNT(DISTINCT _n_mid) > 1
+)
+SELECT a.*, 'V11' AS violation_id
+FROM normalized a
+JOIN grouped g ON a._n_caid = g._n_caid""",
+
+    "V12": """SELECT *, 'V12' AS violation_id
+FROM ammf_output
+WHERE BASEIIName IS NOT NULL
+  AND TRIM(CAST(BASEIIName AS VARCHAR)) != ''
+  AND (
+    LOWER(TRIM(CAST(BASEIIName AS VARCHAR))) = LOWER(TRIM(CAST(DBAName AS VARCHAR)))
+    OR LOWER(TRIM(CAST(BASEIIName AS VARCHAR))) = LOWER(TRIM(CAST(LegalName AS VARCHAR)))
+)""",
+
+    "V13": """WITH agg_tax AS (
+    SELECT UPPER(TRIM(CAST(AggregatorID AS VARCHAR))) AS _n_agg,
+           COUNT(DISTINCT UPPER(TRIM(CAST(BusinessRegistrationID AS VARCHAR)))) AS tax_count,
+           COUNT(*) AS merchant_count
+    FROM ammf_output
+    WHERE AggregatorID IS NOT NULL
+      AND TRIM(CAST(AggregatorID AS VARCHAR)) != ''
+      AND BusinessRegistrationID IS NOT NULL
+      AND TRIM(CAST(BusinessRegistrationID AS VARCHAR)) != ''
+    GROUP BY UPPER(TRIM(CAST(AggregatorID AS VARCHAR)))
+    HAVING COUNT(DISTINCT UPPER(TRIM(CAST(BusinessRegistrationID AS VARCHAR)))) = 1
+       AND COUNT(*) > 1
+)
+SELECT a.*, 'V13' AS violation_id
+FROM ammf_output a
+JOIN agg_tax t ON UPPER(TRIM(CAST(a.AggregatorID AS VARCHAR))) = t._n_agg""",
+}
+
+
 # Registry of all violation checks
 VIOLATION_RULES = [
     {"id": "V1", "name": "Acquirer Name in Merchant Fields",
