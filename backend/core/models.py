@@ -5,6 +5,8 @@ from datetime import datetime
 
 class PipelineStep(str, Enum):
     UPLOADED = "uploaded"
+    INGESTION = "ingestion"                    # Phase 1: DQ on raw data + schema mapping
+    AWAITING_APPROVAL = "awaiting_approval"    # Paused for human review
     SCHEMA_MAPPING = "schema_mapping"
     COMPLETENESS = "completeness"
     RELATIONSHIPS = "relationships"
@@ -102,6 +104,19 @@ class PipelineRunRequest(BaseModel):
     job_id: str
     cib_bin_config: CIBBINConfig | None = None
     selected_steps: list[str] | None = None  # None = all steps; e.g. ["schema_mapping","quality","validation"]
+    selected_violations: list[str] | None = None  # None = defaults; e.g. ["V1","V2",...]
+
+
+class PipelineContinueRequest(BaseModel):
+    """Resume pipeline after human approval of ingestion results."""
+    job_id: str
+    selected_violations: list[str] | None = None  # Which violation rules to run
+
+
+class ChatRequest(BaseModel):
+    """Send a chat message about the current job's data."""
+    job_id: str
+    message: str
 
 
 class AMMFPreview(BaseModel):

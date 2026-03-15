@@ -27,6 +27,10 @@ class Job:
         self.violation_dataframes: dict[str, pd.DataFrame] = {}  # rule_id -> full violation rows
         self.remediation_plans: dict[str, "RemediationPlan"] = {}  # rule_id -> plan
         self.llm_call_logs: list = []  # LLMCallLog objects for this job's latest run
+        self.selected_violations: list[str] | None = None  # Which V-rules to run (None = defaults)
+        self.ingestion_dq_report: QualityReport | None = None  # DQ on raw input (pre-mapping)
+        self.schema_approved: bool = False
+        self.chat_history: list[dict] = []  # [{role, content}]
 
     def get_status(self) -> PipelineStatus:
         return PipelineStatus(

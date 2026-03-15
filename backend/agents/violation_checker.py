@@ -37,8 +37,14 @@ def _count_groups(rule_id: str, result_df: pd.DataFrame) -> int:
     return int(result_df[usable].drop_duplicates().shape[0])
 
 
-def run_violation_checks(job: Job) -> ViolationReport:
-    """Execute all 13 violation rules against the AMMF output table."""
+def run_violation_checks(job: Job, selected_violations: list[str] | None = None) -> ViolationReport:
+    """Execute violation rules against the AMMF output table.
+
+    Args:
+        job: The pipeline job.
+        selected_violations: If provided, only run these rule IDs (e.g. ["V1","V2"]).
+                             None means run all 13 rules.
+    """
     if job.ammf_dataframe is None:
         raise ValueError("AMMF output not yet generated")
 
@@ -47,12 +53,22 @@ def run_violation_checks(job: Job) -> ViolationReport:
     job.db.conn.execute('CREATE OR REPLACE TABLE ammf_output AS SELECT * FROM "_ammf_temp"')
     job.db.conn.unregister("_ammf_temp")
 
+    # Filter rules if selection provided
+    rules_to_run = VIOLATION_RULES
+    if selected_violations is not None:
+        selected_set = set(selected_violations)
+        rules_to_run = [r for r in VIOLATION_RULES if r["id"] in selected_set]
+        skipped = [r["id"] for r in VIOLATION_RULES if r["id"] not in selected_set]
+        job.add_message(f"Running {len(rules_to_run)} of {len(VIOLATION_RULES)} violation rules")
+        if skipped:
+            job.add_message(f"Skipped rules: {', '.join(skipped)}")
+
     violations = []
     total_rows_affected = set()
     # Store full violation DataFrames for download
     job.violation_dataframes = {}
 
-    for rule in VIOLATION_RULES:
+    for rule in rules_to_run:
         try:
             result_df = rule["func"](job.db)
             row_count = len(result_df)

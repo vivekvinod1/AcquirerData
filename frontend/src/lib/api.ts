@@ -13,6 +13,7 @@ import type {
   RemediationApplyResult,
   WebResearchResult,
   ViolationRows,
+  ViolationRuleInfo,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -164,4 +165,47 @@ export async function applyWebFix(
     method: "POST",
     body: JSON.stringify({ job_id: jobId, row_index: rowIndex, fixes }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Ingestion & Approval Gate
+// ---------------------------------------------------------------------------
+
+export async function getIngestionQuality(jobId: string): Promise<QualityReport | null> {
+  return fetchAPI<QualityReport | null>(`/quality/ingestion/${jobId}`);
+}
+
+export async function continuePipeline(
+  jobId: string,
+  selectedViolations?: string[]
+) {
+  return fetchAPI("/pipeline/continue", {
+    method: "POST",
+    body: JSON.stringify({
+      job_id: jobId,
+      selected_violations: selectedViolations,
+    }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+export async function sendChatMessage(
+  jobId: string,
+  message: string
+): Promise<{ response: string }> {
+  return fetchAPI<{ response: string }>(`/chat/${jobId}`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Violation Rule Metadata
+// ---------------------------------------------------------------------------
+
+export async function getViolationRules(): Promise<ViolationRuleInfo[]> {
+  return fetchAPI<ViolationRuleInfo[]>("/violations/rules");
 }

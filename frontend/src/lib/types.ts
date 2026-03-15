@@ -173,3 +173,23 @@ export interface LLMCallSummary {
   total_duration_ms: number;
   calls: LLMCallLog[];
 }
+
+// ---------------------------------------------------------------------------
+// Chat types
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+// ---------------------------------------------------------------------------
+// Violation Rule metadata (for selector UI)
+// ---------------------------------------------------------------------------
+
+export interface ViolationRuleInfo {
+  id: string;
+  name: string;
+  description: string;
+  columns: string[];
+}

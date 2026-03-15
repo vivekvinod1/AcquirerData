@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from core.job_store import job_store
-from core.models import PipelineStatus, PipelineRunRequest, PipelineStep
+from core.models import PipelineStatus, PipelineRunRequest, PipelineContinueRequest, PipelineStep
 import pandas as pd
 import re
 
@@ -20,11 +20,33 @@ async def run_pipeline(request: PipelineRunRequest, background_tasks: Background
         job.cib_bin_config = request.cib_bin_config.model_dump()
 
     job.selected_steps = request.selected_steps
+    if request.selected_violations is not None:
+        job.selected_violations = request.selected_violations
 
     from agents.orchestrator import run_pipeline_async
     background_tasks.add_task(run_pipeline_async, job)
 
     return {"job_id": job.job_id, "status": "running"}
+
+
+@router.post("/pipeline/continue")
+async def continue_pipeline(request: PipelineContinueRequest, background_tasks: BackgroundTasks):
+    """Resume pipeline after human approval of ingestion results (DQ + schema mapping)."""
+    job = job_store.get_job(request.job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    if job.step != PipelineStep.AWAITING_APPROVAL:
+        raise HTTPException(400, f"Job not in awaiting_approval state (current: {job.step})")
+
+    job.schema_approved = True
+    if request.selected_violations is not None:
+        job.selected_violations = request.selected_violations
+
+    from agents.orchestrator import run_pipeline_phase2
+    background_tasks.add_task(run_pipeline_phase2, job)
+
+    return {"job_id": job.job_id, "status": "continuing"}
 
 
 @router.get("/pipeline/status/{job_id}", response_model=PipelineStatus)

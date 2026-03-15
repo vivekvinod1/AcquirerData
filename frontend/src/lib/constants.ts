@@ -1,10 +1,10 @@
 export const PIPELINE_STEPS = [
   { key: "uploaded", label: "Upload", icon: "1" },
-  { key: "schema_mapping", label: "Schema Mapping", icon: "2" },
-  { key: "completeness", label: "Completeness", icon: "3" },
+  { key: "ingestion", label: "Ingestion", icon: "2" },
+  { key: "awaiting_approval", label: "Review", icon: "3" },
   { key: "relationships", label: "Relationships", icon: "4" },
   { key: "quality", label: "Data Quality", icon: "5" },
-  { key: "query_generation", label: "Query Generation", icon: "6" },
+  { key: "query_generation", label: "Query Gen", icon: "6" },
   { key: "executing", label: "Executing", icon: "7" },
   { key: "validation", label: "Validation", icon: "8" },
   { key: "complete", label: "Complete", icon: "✓" },
@@ -25,3 +25,6 @@ export const VIOLATION_LABELS: Record<string, string> = {
   V12: "BASEIIName Copied to DBA/Legal",
   V13: "Sub-merchants Same Tax ID",
 };
+
+/** Violation rules unchecked by default in the selector */
+export const DEFAULT_UNCHECKED_VIOLATIONS = new Set(["V5", "V11", "V12"]);
