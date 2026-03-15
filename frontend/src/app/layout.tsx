@@ -28,15 +28,20 @@ export default function RootLayout({
         <header className="bg-visa-navy text-white">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-visa-gold rounded-lg flex items-center justify-center font-bold text-visa-navy text-lg">
-                V
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/visa-logo.svg" alt="Visa" className="h-8 w-auto" />
+              <div className="w-px h-8 bg-visa-gray-500" />
               <div>
                 <h1 className="text-lg font-bold tracking-tight">AMMF Data Preparation</h1>
                 <p className="text-xs text-visa-gray-300">Acquirer Merchant Data Compliance</p>
               </div>
             </div>
-            <span className="text-xs text-visa-gray-300">Powered by Agentic AI</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-visa-gray-300">Powered by</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/exl-logo.svg" alt="EXL" className="h-5 w-auto" />
+              <span className="text-xs font-semibold text-white">data.AI</span>
+            </div>
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-6 py-8">
