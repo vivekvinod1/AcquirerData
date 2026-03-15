@@ -351,6 +351,27 @@ export async function testViolationRule(
   });
 }
 
+export interface LLMStats {
+  total_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  total_duration_ms: number;
+  jobs_with_calls: number;
+  per_label: Record<string, { calls: number; input_tokens: number; output_tokens: number; cost_usd: number; errors: number }>;
+  per_job: { job_id: string; calls: number; input_tokens: number; output_tokens: number; cost_usd: number; duration_ms: number; started_at: string | null }[];
+  recent_calls: {
+    call_id: number; method: string; label: string; model: string;
+    system_prompt: string; user_prompt: string; output: string;
+    input_tokens: number; output_tokens: number; cost_usd: number;
+    duration_ms: number; timestamp: number; error: string | null;
+  }[];
+}
+
+export async function getLLMStats(): Promise<LLMStats> {
+  return fetchAPI<LLMStats>("/config/llm-stats");
+}
+
 export async function generateResolutionStrategy(
   ruleId: string,
   ruleName: string,

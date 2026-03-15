@@ -426,3 +426,72 @@ Generate a resolution strategy with:
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to generate resolution strategy: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Aggregate LLM Stats
+# ---------------------------------------------------------------------------
+
+@router.get("/config/llm-stats")
+async def get_llm_stats():
+    """Return aggregate LLM usage stats across all live jobs."""
+    from core.job_store import job_store
+
+    all_calls = []
+    per_job = []
+
+    for job_id, job in job_store._jobs.items():
+        logs = getattr(job, "llm_call_logs", [])
+        if not logs:
+            continue
+        job_input = sum(getattr(l, "input_tokens", 0) for l in logs)
+        job_output = sum(getattr(l, "output_tokens", 0) for l in logs)
+        job_cost = sum(getattr(l, "cost_usd", 0.0) for l in logs)
+        job_duration = sum(getattr(l, "duration_ms", 0) for l in logs)
+        per_job.append({
+            "job_id": job_id,
+            "calls": len(logs),
+            "input_tokens": job_input,
+            "output_tokens": job_output,
+            "cost_usd": round(job_cost, 6),
+            "duration_ms": job_duration,
+            "started_at": job.started_at,
+        })
+        all_calls.extend(logs)
+
+    # Per-label breakdown
+    label_stats: dict[str, dict] = {}
+    for log in all_calls:
+        lbl = getattr(log, "label", None) or getattr(log, "method", "unknown")
+        if lbl not in label_stats:
+            label_stats[lbl] = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "errors": 0}
+        label_stats[lbl]["calls"] += 1
+        label_stats[lbl]["input_tokens"] += getattr(log, "input_tokens", 0)
+        label_stats[lbl]["output_tokens"] += getattr(log, "output_tokens", 0)
+        label_stats[lbl]["cost_usd"] += getattr(log, "cost_usd", 0.0)
+        if getattr(log, "error", None):
+            label_stats[lbl]["errors"] += 1
+
+    # Round costs
+    for v in label_stats.values():
+        v["cost_usd"] = round(v["cost_usd"], 6)
+
+    total_input = sum(getattr(l, "input_tokens", 0) for l in all_calls)
+    total_output = sum(getattr(l, "output_tokens", 0) for l in all_calls)
+    total_cost = sum(getattr(l, "cost_usd", 0.0) for l in all_calls)
+    total_duration = sum(getattr(l, "duration_ms", 0) for l in all_calls)
+
+    # Recent calls (last 20)
+    recent = sorted(all_calls, key=lambda l: getattr(l, "timestamp", 0), reverse=True)[:20]
+
+    return {
+        "total_calls": len(all_calls),
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+        "total_cost_usd": round(total_cost, 6),
+        "total_duration_ms": total_duration,
+        "jobs_with_calls": len(per_job),
+        "per_label": label_stats,
+        "per_job": per_job,
+        "recent_calls": [l.to_dict() for l in recent],
+    }
