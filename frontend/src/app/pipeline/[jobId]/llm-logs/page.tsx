@@ -2,8 +2,99 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
-import { getLLMLogs } from "@/lib/api";
+import { getLLMLogs, updatePrompt } from "@/lib/api";
 import type { LLMCallSummary, LLMCallLog } from "@/lib/types";
+
+/* ─── Prompt Editor Modal ─── */
+function PromptEditorModal({
+  promptKey,
+  currentValue,
+  onSave,
+  onCancel,
+}: {
+  promptKey: string;
+  currentValue: string;
+  onSave: (key: string, value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(currentValue);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(promptKey, value);
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-visa-gray-200">
+          <h3 className="text-lg font-semibold text-visa-navy">
+            Edit System Prompt
+          </h3>
+          <p className="text-sm text-visa-gray-500 mt-1">
+            Changes will apply to future pipeline runs. This overrides the default prompt for the <code className="bg-visa-gray-100 px-1 rounded">{promptKey}</code> step.
+          </p>
+        </div>
+        <div className="flex-1 p-6 overflow-auto">
+          <textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-full h-80 border border-visa-gray-300 rounded-lg px-4 py-3 text-sm font-mono bg-visa-gray-50 leading-relaxed resize-y"
+            spellCheck={false}
+          />
+        </div>
+        <div className="p-6 border-t border-visa-gray-200 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm text-visa-gray-600 bg-visa-gray-100 rounded-lg hover:bg-visa-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || value === currentValue}
+            className="px-4 py-2 text-sm text-white bg-visa-navy rounded-lg hover:bg-visa-blue disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Prompt"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Label → prompt key mapping ─── */
+function getPromptKeyFromLabel(label: string): string | null {
+  const lower = label.toLowerCase();
+  if (lower.includes("schema mapping")) return "schema_mapping";
+  if (lower.includes("relationship")) return "relationship_discovery";
+  if (lower.includes("sql generation")) return "sql_generation";
+  if (lower.includes("chat")) return "chat";
+  return null;
+}
+
+/* ─── Label color chip ─── */
+function LabelChip({ label }: { label: string }) {
+  const colors: Record<string, string> = {
+    "Schema Mapping": "bg-blue-100 text-blue-700",
+    "Relationship Discovery": "bg-purple-100 text-purple-700",
+    "SQL Generation": "bg-green-100 text-green-700",
+    "Chat Response": "bg-amber-100 text-amber-700",
+    "Research: Query Gen": "bg-pink-100 text-pink-700",
+    "Research: Analysis": "bg-pink-100 text-pink-700",
+    "Research: Fix Suggestions": "bg-pink-100 text-pink-700",
+  };
+
+  const color = colors[label] || (label.includes("Retry") ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-700");
+
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+      {label}
+    </span>
+  );
+}
 
 export default function LLMLogsPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = use(params);
@@ -12,6 +103,10 @@ export default function LLMLogsPage({ params }: { params: Promise<{ jobId: strin
   const [loading, setLoading] = useState(true);
   const [expandedCall, setExpandedCall] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<Record<number, string>>({});
+  const [editingPrompt, setEditingPrompt] = useState<{
+    key: string;
+    value: string;
+  } | null>(null);
 
   useEffect(() => {
     getLLMLogs(jobId)
@@ -23,6 +118,22 @@ export default function LLMLogsPage({ params }: { params: Promise<{ jobId: strin
 
   const setTab = (callId: number, tab: string) => {
     setActiveTab((prev) => ({ ...prev, [callId]: tab }));
+  };
+
+  const handleEditPrompt = (call: LLMCallLog) => {
+    const key = getPromptKeyFromLabel(call.label || call.method);
+    if (key) {
+      setEditingPrompt({ key, value: call.system_prompt });
+    }
+  };
+
+  const handleSavePrompt = async (key: string, value: string) => {
+    try {
+      await updatePrompt(key, value);
+      setEditingPrompt(null);
+    } catch (err) {
+      alert(`Failed to save prompt: ${err}`);
+    }
   };
 
   if (loading) return <div className="text-center py-12 text-visa-gray-500">Loading LLM logs...</div>;
@@ -79,7 +190,12 @@ export default function LLMLogsPage({ params }: { params: Promise<{ jobId: strin
                   {call.call_id}
                 </span>
                 <div className="text-left">
-                  <div className="text-sm font-medium text-visa-navy">{call.method}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-visa-navy">
+                      {call.label || call.method}
+                    </span>
+                    <LabelChip label={call.label || call.method} />
+                  </div>
                   <div className="text-xs text-visa-gray-500">{call.model}</div>
                 </div>
               </div>
@@ -111,6 +227,21 @@ export default function LLMLogsPage({ params }: { params: Promise<{ jobId: strin
                       {tab === "system" ? "System Prompt" : tab === "user" ? "User Prompt" : "Output"}
                     </button>
                   ))}
+                  {/* Edit button for system prompt */}
+                  {getTabForCall(call.call_id) === "system" && getPromptKeyFromLabel(call.label || call.method) && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditPrompt(call);
+                      }}
+                      className="ml-auto mr-2 px-3 py-1 text-xs text-visa-navy bg-visa-gray-100 rounded hover:bg-visa-gray-200 flex items-center gap-1 my-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit Prompt
+                    </button>
+                  )}
                 </div>
                 {/* Tab Content */}
                 <div className="p-4 bg-visa-gray-50 max-h-96 overflow-auto">
@@ -129,6 +260,16 @@ export default function LLMLogsPage({ params }: { params: Promise<{ jobId: strin
           <div className="text-center py-8 text-visa-gray-500">No LLM calls recorded yet. Run the pipeline first.</div>
         )}
       </div>
+
+      {/* Prompt Editor Modal */}
+      {editingPrompt && (
+        <PromptEditorModal
+          promptKey={editingPrompt.key}
+          currentValue={editingPrompt.value}
+          onSave={handleSavePrompt}
+          onCancel={() => setEditingPrompt(null)}
+        />
+      )}
     </div>
   );
 }

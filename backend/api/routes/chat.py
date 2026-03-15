@@ -88,7 +88,12 @@ async def chat_with_data(job_id: str, request: ChatRequest):
         )
 
     from core.llm_client import llm_client
-    response_text = llm_client.text_query(system_prompt, user_prompt)
+    from core.config_store import get_prompt
+    # The chat system prompt has dynamic job context appended, so we only override the static prefix
+    custom_prefix = get_prompt("chat", None)
+    if custom_prefix:
+        system_prompt = custom_prefix + "\n\nCurrent job context:\n" + "\n".join(context_parts)
+    response_text = llm_client.text_query(system_prompt, user_prompt, label="Chat Response")
 
     # Store in chat history
     job.chat_history.append({"role": "user", "content": request.message})

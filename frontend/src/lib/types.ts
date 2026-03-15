@@ -164,6 +164,7 @@ export interface RemediationApplyResult {
 export interface LLMCallLog {
   call_id: number;
   method: string;
+  label: string;
   model: string;
   system_prompt: string;
   user_prompt: string;

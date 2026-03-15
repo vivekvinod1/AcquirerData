@@ -9,8 +9,13 @@ import {
   createViolationRule,
   deleteViolationRule,
   resetViolationRules,
+  getPrompts,
+  updatePrompt,
+  resetPrompt,
+  resetAllPrompts,
   type DQRule,
   type ConfigViolationRule,
+  type PromptConfig,
 } from "@/lib/api";
 
 /* ─── Severity badge ─── */
@@ -178,11 +183,182 @@ function RuleEditorModal({
   );
 }
 
+/* ─── LLM Prompts Section ─── */
+function LLMPromptsSection({
+  prompts,
+  onReload,
+}: {
+  prompts: PromptConfig[];
+  onReload: () => void;
+}) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleEdit = (p: PromptConfig) => {
+    setEditingKey(p.key);
+    setEditValue(p.value);
+  };
+
+  const handleSave = async () => {
+    if (!editingKey) return;
+    setSaving(true);
+    try {
+      await updatePrompt(editingKey, editValue);
+      setEditingKey(null);
+      onReload();
+    } catch (err) {
+      alert(`Failed to save: ${err}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async (key: string) => {
+    if (!confirm("Reset this prompt to its factory default?")) return;
+    try {
+      await resetPrompt(key);
+      onReload();
+    } catch (err) {
+      alert(`Failed to reset: ${err}`);
+    }
+  };
+
+  const handleResetAll = async () => {
+    if (!confirm("Reset ALL prompts to factory defaults?")) return;
+    try {
+      await resetAllPrompts();
+      onReload();
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-visa-navy">LLM Prompts</h3>
+          <p className="text-sm text-visa-gray-500 mt-1">
+            Customize the system prompts sent to Claude at each pipeline step.
+            Changes apply to all future runs.
+          </p>
+        </div>
+        <button
+          onClick={handleResetAll}
+          className="px-3 py-1.5 text-xs text-visa-gray-600 bg-visa-gray-100 rounded-lg hover:bg-visa-gray-200"
+        >
+          Reset All
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {prompts.map((p) => (
+          <div key={p.key} className="border border-visa-gray-200 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4 bg-visa-gray-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-visa-navy text-white rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-visa-navy">{p.name}</span>
+                    <code className="text-xs bg-visa-gray-200 text-visa-gray-600 px-1.5 py-0.5 rounded">
+                      {p.key}
+                    </code>
+                    {p.is_custom && (
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                        Customized
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-visa-gray-500 mt-0.5">
+                    {p.value.slice(0, 120)}...
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {p.is_custom && (
+                  <button
+                    onClick={() => handleReset(p.key)}
+                    className="px-3 py-1.5 text-xs text-visa-gray-600 bg-visa-gray-100 rounded hover:bg-visa-gray-200"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  onClick={() => handleEdit(p)}
+                  className="px-3 py-1.5 text-xs text-white bg-visa-navy rounded hover:bg-visa-blue"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Edit Modal */}
+      {editingKey && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-visa-gray-200">
+              <h3 className="text-lg font-semibold text-visa-navy">
+                Edit Prompt: {prompts.find((p) => p.key === editingKey)?.name}
+              </h3>
+              <p className="text-sm text-visa-gray-500 mt-1">
+                This system prompt is sent to Claude at the start of the <code className="bg-visa-gray-100 px-1 rounded">{editingKey}</code> step.
+              </p>
+            </div>
+            <div className="flex-1 p-6 overflow-auto">
+              <textarea
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="w-full h-80 border border-visa-gray-300 rounded-lg px-4 py-3 text-sm font-mono bg-visa-gray-50 leading-relaxed resize-y"
+                spellCheck={false}
+              />
+            </div>
+            <div className="p-6 border-t border-visa-gray-200 flex justify-between">
+              <button
+                onClick={() => {
+                  const def = prompts.find((p) => p.key === editingKey)?.default_value;
+                  if (def) setEditValue(def);
+                }}
+                className="px-4 py-2 text-sm text-visa-gray-600 hover:text-visa-navy"
+              >
+                Restore Default
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setEditingKey(null)}
+                  className="px-4 py-2 text-sm text-visa-gray-600 bg-visa-gray-100 rounded-lg hover:bg-visa-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-4 py-2 text-sm text-white bg-visa-navy rounded-lg hover:bg-visa-blue disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save Prompt"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Settings Page ─── */
 export default function SettingsPage() {
   const router = useRouter();
   const [dqRules, setDqRules] = useState<DQRule[]>([]);
   const [violationRules, setViolationRules] = useState<ConfigViolationRule[]>([]);
+  const [prompts, setPrompts] = useState<PromptConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingRule, setEditingRule] = useState<ConfigViolationRule | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -190,9 +366,10 @@ export default function SettingsPage() {
 
   const loadRules = async () => {
     try {
-      const [dq, vr] = await Promise.all([getDQRules(), getConfigViolationRules()]);
+      const [dq, vr, pr] = await Promise.all([getDQRules(), getConfigViolationRules(), getPrompts()]);
       setDqRules(dq);
       setViolationRules(vr);
+      setPrompts(pr);
     } catch {
       // fallback
     } finally {
@@ -269,7 +446,7 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-2xl font-bold text-visa-navy">Settings</h2>
           <p className="text-sm text-visa-gray-500">
-            Configure data quality checks and violation rules
+            Configure data quality checks, violation rules, and LLM prompts
           </p>
         </div>
         <button
@@ -416,6 +593,9 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {/* LLM Prompts */}
+      <LLMPromptsSection prompts={prompts} onReload={loadRules} />
 
       {/* Edit Modal */}
       {editingRule && (

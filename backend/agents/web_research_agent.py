@@ -82,7 +82,7 @@ Generate search queries to find the correct information. Return as JSON:
     }
 
     try:
-        result = llm_client.structured_query(system, user, schema)
+        result = llm_client.structured_query(system, user, schema, label="Research: Query Gen")
         return result.get("queries", [f'"{merchant_name}" business address'])
     except Exception:
         # Fallback to simple queries
@@ -165,7 +165,7 @@ Be honest about confidence levels. If you don't have reliable information, say s
     }
 
     try:
-        result = llm_client.structured_query(system, user, schema)
+        result = llm_client.structured_query(system, user, schema, label="Research: Analysis")
         return result.get("results", [])
     except Exception:
         return []
@@ -232,6 +232,6 @@ Analyze and suggest specific fixes. For each fix, provide the column name, sugge
     }
 
     try:
-        return llm_client.structured_query(system, user, schema)
+        return llm_client.structured_query(system, user, schema, label="Research: Fix Suggestions")
     except Exception as e:
         return {"analysis": f"Analysis failed: {e}", "suggested_fixes": []}

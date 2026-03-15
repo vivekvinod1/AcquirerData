@@ -69,7 +69,9 @@ Return a structured join plan showing how to combine all tables into a single ou
         "required": ["tables", "joins", "main_table"],
     }
 
-    return llm_client.structured_query(SYSTEM_PROMPT, user_prompt, output_schema)
+    from core.config_store import get_prompt
+    system = get_prompt("relationship_discovery", SYSTEM_PROMPT)
+    return llm_client.structured_query(system, user_prompt, output_schema, label="Relationship Discovery")
 
 
 def _format_tables(summary: dict) -> str:

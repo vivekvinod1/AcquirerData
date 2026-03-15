@@ -71,7 +71,9 @@ Important:
         "required": ["mappings"],
     }
 
-    result = llm_client.structured_query(SYSTEM_PROMPT, user_prompt, output_schema)
+    from core.config_store import get_prompt
+    system = get_prompt("schema_mapping", SYSTEM_PROMPT)
+    result = llm_client.structured_query(system, user_prompt, output_schema, label="Schema Mapping")
 
     mappings = []
     mapped_ammf_cols = set()

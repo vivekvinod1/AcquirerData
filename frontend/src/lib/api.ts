@@ -283,3 +283,34 @@ export async function deleteViolationRule(ruleId: string) {
 export async function resetViolationRules() {
   return fetchAPI("/config/violation-rules/reset", { method: "POST" });
 }
+
+// ---------------------------------------------------------------------------
+// LLM Prompts
+// ---------------------------------------------------------------------------
+
+export interface PromptConfig {
+  key: string;
+  name: string;
+  value: string;
+  is_custom: boolean;
+  default_value: string;
+}
+
+export async function getPrompts(): Promise<PromptConfig[]> {
+  return fetchAPI<PromptConfig[]>("/config/prompts");
+}
+
+export async function updatePrompt(key: string, value: string) {
+  return fetchAPI(`/config/prompts/${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function resetPrompt(key: string) {
+  return fetchAPI(`/config/prompts/${key}`, { method: "DELETE" });
+}
+
+export async function resetAllPrompts() {
+  return fetchAPI("/config/prompts/reset", { method: "POST" });
+}

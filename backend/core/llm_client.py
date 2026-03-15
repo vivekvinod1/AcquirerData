@@ -6,9 +6,10 @@ from core.config import settings
 
 class LLMCallLog:
     """Stores details of a single LLM call."""
-    def __init__(self, call_id, method, system_prompt, user_prompt):
+    def __init__(self, call_id, method, system_prompt, user_prompt, label=None):
         self.call_id = call_id
         self.method = method
+        self.label = label or method  # Human-readable name for the call
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
         self.output = ""
@@ -24,6 +25,7 @@ class LLMCallLog:
         return {
             "call_id": self.call_id,
             "method": self.method,
+            "label": self.label,
             "model": self.model,
             "system_prompt": self.system_prompt[:2000],
             "user_prompt": self.user_prompt[:5000],
@@ -81,17 +83,17 @@ class LLMClient:
         pricing = PRICING.get(self.model, DEFAULT_PRICING)
         return (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
 
-    def _log_call(self, method, system_prompt, user_prompt):
+    def _log_call(self, method, system_prompt, user_prompt, label=None):
         self._call_counter += 1
-        log = LLMCallLog(self._call_counter, method, system_prompt, user_prompt)
+        log = LLMCallLog(self._call_counter, method, system_prompt, user_prompt, label=label)
         log.model = self.model
         if self._active_log_list is not None:
             self._active_log_list.append(log)
         return log
 
-    def structured_query(self, system_prompt, user_prompt, output_schema):
+    def structured_query(self, system_prompt, user_prompt, output_schema, label=None):
         """Query Claude with a tool-use pattern to get structured JSON output."""
-        log = self._log_call("structured_query", system_prompt, user_prompt)
+        log = self._log_call("structured_query", system_prompt, user_prompt, label=label)
         start = time.time()
         try:
             response = self.client.messages.create(
@@ -121,9 +123,9 @@ class LLMClient:
             log.error = str(e)
             raise
 
-    def text_query(self, system_prompt, user_prompt):
+    def text_query(self, system_prompt, user_prompt, label=None):
         """Query Claude for free-form text response."""
-        log = self._log_call("text_query", system_prompt, user_prompt)
+        log = self._log_call("text_query", system_prompt, user_prompt, label=label)
         start = time.time()
         try:
             response = self.client.messages.create(
@@ -143,7 +145,7 @@ class LLMClient:
             log.error = str(e)
             raise
 
-    def sql_query(self, system_prompt, user_prompt):
+    def sql_query(self, system_prompt, user_prompt, label=None):
         """Query Claude specifically for SQL generation."""
         schema = {
             "type": "object",
@@ -153,7 +155,7 @@ class LLMClient:
             },
             "required": ["sql", "explanation"],
         }
-        result = self.structured_query(system_prompt, user_prompt, schema)
+        result = self.structured_query(system_prompt, user_prompt, schema, label=label)
         return result["sql"]
 
 

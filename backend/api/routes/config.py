@@ -150,3 +150,80 @@ async def reset_all_rules():
     from core.config_store import reset_custom_rules
     reset_custom_rules()
     return {"status": "reset"}
+
+
+# ---------------------------------------------------------------------------
+# LLM Prompts (CRUD)
+# ---------------------------------------------------------------------------
+
+# Map of prompt keys → their factory-default values (imported from agents)
+def _get_default_prompts() -> dict[str, str]:
+    """Lazily load default prompts from agent modules."""
+    from agents.schema_mapper import SYSTEM_PROMPT as SCHEMA_PROMPT
+    from agents.relationship_discoverer import SYSTEM_PROMPT as REL_PROMPT
+    from agents.query_generator import SYSTEM_PROMPT as SQL_PROMPT
+    return {
+        "schema_mapping": SCHEMA_PROMPT,
+        "relationship_discovery": REL_PROMPT,
+        "sql_generation": SQL_PROMPT,
+        "chat": (
+            "You are a data quality assistant for AMMF (Acquirer Merchant Master File) data preparation. "
+            "Help the user understand data quality issues, schema mapping gaps, and how to improve their data. "
+            "The AMMF format has 31 required/optional columns for Visa's acquirer merchant compliance program.\n\n"
+            "Be concise, specific, and actionable. When suggesting fixes, reference specific table names and columns."
+        ),
+    }
+
+
+@router.get("/config/prompts")
+async def get_all_prompts():
+    """Return all prompt keys with their current (custom or default) values."""
+    from core.config_store import get_all_prompts, PROMPT_KEYS
+
+    defaults = _get_default_prompts()
+    custom = get_all_prompts()
+
+    result = []
+    for key, display_name in PROMPT_KEYS.items():
+        result.append({
+            "key": key,
+            "name": display_name,
+            "value": custom.get(key, defaults.get(key, "")),
+            "is_custom": key in custom,
+            "default_value": defaults.get(key, ""),
+        })
+    return result
+
+
+class PromptUpdate(BaseModel):
+    value: str
+
+
+@router.put("/config/prompts/{key}")
+async def update_prompt(key: str, update: PromptUpdate):
+    """Update a custom prompt override."""
+    from core.config_store import set_prompt, PROMPT_KEYS
+
+    if key not in PROMPT_KEYS:
+        raise HTTPException(400, f"Unknown prompt key: {key}")
+    set_prompt(key, update.value)
+    return {"status": "updated", "key": key}
+
+
+@router.delete("/config/prompts/{key}")
+async def reset_prompt(key: str):
+    """Reset a single prompt to its factory default."""
+    from core.config_store import delete_prompt, PROMPT_KEYS
+
+    if key not in PROMPT_KEYS:
+        raise HTTPException(400, f"Unknown prompt key: {key}")
+    delete_prompt(key)
+    return {"status": "reset_to_default", "key": key}
+
+
+@router.post("/config/prompts/reset")
+async def reset_all_prompts():
+    """Reset all prompts to factory defaults."""
+    from core.config_store import reset_prompts
+    reset_prompts()
+    return {"status": "reset"}

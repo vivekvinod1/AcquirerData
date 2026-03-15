@@ -152,6 +152,9 @@ Generate a complete DuckDB SQL query. If there is a bin/CIB reference table avai
     sql = None
     last_error = None
 
+    from core.config_store import get_prompt
+    system = get_prompt("sql_generation", SYSTEM_PROMPT)
+
     for attempt in range(max_retries):
         try:
             if last_error:
@@ -159,9 +162,9 @@ Generate a complete DuckDB SQL query. If there is a bin/CIB reference table avai
                     f"{user_prompt}\n\nPREVIOUS ATTEMPT FAILED WITH ERROR:\n{last_error}\n"
                     f"Please fix the SQL to resolve this error."
                 )
-                sql = llm_client.sql_query(SYSTEM_PROMPT, retry_prompt)
+                sql = llm_client.sql_query(system, retry_prompt, label=f"SQL Generation (Retry {attempt + 1})")
             else:
-                sql = llm_client.sql_query(SYSTEM_PROMPT, user_prompt)
+                sql = llm_client.sql_query(system, user_prompt, label="SQL Generation")
 
             # Validate by executing
             job.db.execute(f"SELECT * FROM ({sql}) LIMIT 1")
