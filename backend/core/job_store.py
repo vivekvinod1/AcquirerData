@@ -1,8 +1,15 @@
 import uuid
+import json
+import os
+from pathlib import Path
 from datetime import datetime
 from core.models import PipelineStep, PipelineStatus, JobSummary, SchemaMapping, QualityReport, ViolationReport
 from core.db_engine import DuckDBEngine
 import pandas as pd
+
+# Persist job summaries to survive server restarts
+_DATA_DIR = Path(os.environ.get("AMMF_DATA_DIR", "/tmp/ammf_data"))
+_JOBS_FILE = _DATA_DIR / "jobs.json"
 
 
 class Job:
@@ -64,11 +71,54 @@ class Job:
     def set_step(self, step: PipelineStep, progress: int):
         self.step = step
         self.progress_pct = progress
+        # Persist summary on every state change
+        _persist_job_summary(self)
+
+    def to_summary_dict(self) -> dict:
+        """Serializable summary dict for persistence."""
+        total_rows = sum(len(df) for df in self.tables.values()) if self.tables else 0
+        violation_count = self.violation_report.total_violations if self.violation_report else None
+        return {
+            "job_id": self.job_id,
+            "step": self.step.value if isinstance(self.step, PipelineStep) else self.step,
+            "progress_pct": self.progress_pct,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "created_at": self.created_at,
+            "file_names": [f.name for f in self.files] if self.files else [],
+            "total_rows": total_rows,
+            "violation_count": violation_count,
+            "error": self.error,
+        }
+
+
+def _persist_job_summary(job: Job):
+    """Write/update this job's summary in the persistent JSON file."""
+    try:
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        existing: dict = {}
+        if _JOBS_FILE.exists():
+            existing = json.loads(_JOBS_FILE.read_text())
+        existing[job.job_id] = job.to_summary_dict()
+        _JOBS_FILE.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass  # Non-fatal: persistence is best-effort
+
+
+def _load_persisted_summaries() -> dict[str, dict]:
+    """Load previously persisted job summaries from disk."""
+    try:
+        if _JOBS_FILE.exists():
+            return json.loads(_JOBS_FILE.read_text())
+    except Exception:
+        pass
+    return {}
 
 
 class JobStore:
     def __init__(self):
         self._jobs: dict[str, Job] = {}
+        self._persisted: dict[str, dict] = _load_persisted_summaries()
 
     def create_job(self) -> Job:
         job_id = str(uuid.uuid4())[:8]
@@ -80,7 +130,31 @@ class JobStore:
         return self._jobs.get(job_id)
 
     def list_jobs(self) -> list[str]:
-        return list(self._jobs.keys())
+        """Return all job IDs: live + persisted (deduplicated)."""
+        all_ids = set(self._jobs.keys())
+        all_ids.update(self._persisted.keys())
+        return list(all_ids)
+
+    def get_summary(self, job_id: str) -> JobSummary | None:
+        """Get summary from live job if available, else from persisted data."""
+        job = self._jobs.get(job_id)
+        if job:
+            return job.get_summary()
+        # Fall back to persisted summary
+        data = self._persisted.get(job_id)
+        if data:
+            return JobSummary(
+                job_id=data["job_id"],
+                step=data.get("step", "complete"),
+                progress_pct=data.get("progress_pct", 100),
+                started_at=data.get("started_at"),
+                completed_at=data.get("completed_at"),
+                created_at=data.get("created_at", ""),
+                file_names=data.get("file_names", []),
+                total_rows=data.get("total_rows", 0),
+                violation_count=data.get("violation_count"),
+            )
+        return None
 
 
 job_store = JobStore()

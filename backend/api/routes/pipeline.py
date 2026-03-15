@@ -9,9 +9,9 @@ router = APIRouter()
 
 @router.get("/jobs", response_model=list[JobSummary])
 async def list_jobs():
-    """Return summaries of all pipeline runs, most recent first."""
-    jobs = [job_store.get_job(jid) for jid in job_store.list_jobs()]
-    summaries = [j.get_summary() for j in jobs if j is not None]
+    """Return summaries of all pipeline runs (live + persisted), most recent first."""
+    summaries = [job_store.get_summary(jid) for jid in job_store.list_jobs()]
+    summaries = [s for s in summaries if s is not None]
     summaries.sort(key=lambda s: s.created_at or "", reverse=True)
     return summaries
 
@@ -61,9 +61,20 @@ async def continue_pipeline(request: PipelineContinueRequest, background_tasks: 
 @router.get("/pipeline/status/{job_id}", response_model=PipelineStatus)
 async def get_pipeline_status(job_id: str):
     job = job_store.get_job(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found")
-    return job.get_status()
+    if job:
+        return job.get_status()
+    # Fall back to persisted summary (past run, server restarted)
+    summary = job_store.get_summary(job_id)
+    if summary:
+        return PipelineStatus(
+            job_id=summary.job_id,
+            step=summary.step,
+            progress_pct=summary.progress_pct,
+            messages=["This run's detailed data is no longer available (server was restarted)."],
+            started_at=summary.started_at,
+            completed_at=summary.completed_at,
+        )
+    raise HTTPException(404, "Job not found")
 
 
 @router.get("/pipeline/sql/{job_id}")
