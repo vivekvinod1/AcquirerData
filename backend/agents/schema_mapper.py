@@ -17,8 +17,9 @@ MAPPING PRIORITY:
 CANDIDATE RANKING — for each AMMF column, return up to 5 candidate source columns, ranked best-first:
 - Rank by: (1) Data dictionary semantic match — if a dictionary description clearly describes the same concept as the AMMF column, that candidate ranks highest. (2) Overall confidence considering column name similarity, data type compatibility, sample value patterns, and null rate (lower null % is better).
 - The FIRST candidate in your list must be your STRONGEST recommendation.
-- Include alternatives when multiple source columns could plausibly match the same AMMF field.
-- If only one good match exists, return just that one candidate.
+- ALWAYS try to include at least 2 candidates per AMMF column when possible. Even if the best match is obvious, include the next-best source column as an alternative so the user can review options. Only return a single candidate when there is truly no other plausible column in ANY source table.
+- Think creatively about alternatives: a column in a different table, a column with a similar but not identical name, or a column whose sample values suggest it could work.
+- For derived columns (like BASEIIName, AcquirerMerchantID), include alternative derivation approaches as separate candidates if applicable.
 
 KEY RULES:
 - Each AMMF column should map to at most one source column (or be derived from a combination).
@@ -64,8 +65,9 @@ TARGET FORMAT:
 
 For each of the 31 AMMF columns, return up to 5 candidate source columns ranked best-first:
 1. The first candidate is your strongest recommendation (the default mapping).
-2. Include alternatives when multiple source columns could plausibly map to the same AMMF field.
+2. ALWAYS include at least 2 candidates per AMMF column when possible — the user needs to see alternatives to make informed decisions. Look across ALL source tables for plausible runner-up columns, even if the best match is obvious.
 3. For each candidate: which source table and column, confidence (0.0-1.0), reasoning, and whether it's derived.
+4. Only return a single candidate when there is truly no other plausible source column in any table.
 
 Important:
 - For ProcessorBINCIB, ProcessorName, AcquirerBID, AcquirerName, AcquirerBIN: look at the actual source tables above. If a reference/master table contains these values, map them to that table and column directly.
