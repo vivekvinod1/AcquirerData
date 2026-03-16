@@ -9,8 +9,9 @@ interface SchemaMapEditorProps {
 }
 
 function getConfidenceBadge(c: number, hasAlts: boolean) {
-  if (c >= 0.9 && !hasAlts) return { color: "bg-green-100 text-green-800", label: "High" };
-  if (c >= 0.7) return { color: "bg-yellow-100 text-yellow-800", label: hasAlts ? "Review" : "Medium" };
+  if (hasAlts) return { color: "bg-yellow-100 text-yellow-800", label: "Multiple" };
+  if (c >= 0.9) return { color: "bg-green-100 text-green-800", label: "High" };
+  if (c >= 0.7) return { color: "bg-amber-100 text-amber-800", label: "Medium" };
   return { color: "bg-red-100 text-red-800", label: "Low" };
 }
 
@@ -64,7 +65,7 @@ function CandidateDropdown({
             </span>
             <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
               c.confidence >= 0.9 ? "bg-green-100 text-green-700" :
-              c.confidence >= 0.7 ? "bg-yellow-100 text-yellow-700" :
+              c.confidence >= 0.7 ? "bg-amber-100 text-amber-700" :
               "bg-red-100 text-red-700"
             }`}>
               {(c.confidence * 100).toFixed(0)}%
@@ -320,7 +321,7 @@ export default function SchemaMapEditor({
                       {/* Confidence */}
                       <td className="p-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}>
-                          {(m.confidence * 100).toFixed(0)}%
+                          {badge.label} ({(m.confidence * 100).toFixed(0)}%)
                         </span>
                       </td>
 

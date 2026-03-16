@@ -8,6 +8,7 @@ interface PipelineActivityPanelProps {
 }
 
 const ACTIVE_STEPS = new Set([
+  "uploaded",
   "ingestion",
   "relationships",
   "quality",
@@ -20,6 +21,10 @@ const STEP_CONFIG: Record<
   string,
   { title: string; subtitle: string }
 > = {
+  uploaded: {
+    title: "Starting Pipeline",
+    subtitle: "Preparing your data files for processing...",
+  },
   ingestion: {
     title: "Analyzing Your Data",
     subtitle: "Running data quality checks and AI schema mapping...",
@@ -325,6 +330,7 @@ function ValidationAnimation() {
 /* ------------------------------------------------------------------ */
 
 const ANIMATION_MAP: Record<string, React.FC> = {
+  uploaded: IngestionAnimation,
   ingestion: IngestionAnimation,
   relationships: RelationshipsAnimation,
   quality: QualityAnimation,
