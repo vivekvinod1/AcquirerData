@@ -15,6 +15,8 @@ import type {
   ViolationRows,
   ViolationRuleInfo,
   JobSummary,
+  MappingTemplateSummary,
+  TemplateMatch,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -43,7 +45,8 @@ export async function runPipeline(
   jobId: string,
   cibBinConfig?: CIBBINConfig,
   selectedSteps?: string[],
-  selectedViolations?: string[]
+  selectedViolations?: string[],
+  forceReview?: boolean
 ) {
   return fetchAPI("/pipeline/run", {
     method: "POST",
@@ -52,6 +55,7 @@ export async function runPipeline(
       cib_bin_config: cibBinConfig,
       selected_steps: selectedSteps,
       selected_violations: selectedViolations,
+      force_review: forceReview || false,
     }),
   });
 }
@@ -180,13 +184,19 @@ export async function getIngestionQuality(jobId: string): Promise<QualityReport 
 
 export async function continuePipeline(
   jobId: string,
-  selectedViolations?: string[]
+  selectedViolations?: string[],
+  userInstructions?: string,
+  saveAsTemplate?: boolean,
+  templateName?: string
 ) {
   return fetchAPI("/pipeline/continue", {
     method: "POST",
     body: JSON.stringify({
       job_id: jobId,
       selected_violations: selectedViolations,
+      user_instructions: userInstructions || null,
+      save_as_template: saveAsTemplate || false,
+      template_name: templateName || null,
     }),
   });
 }
@@ -427,4 +437,24 @@ export async function generateResolutionStrategy(
       }),
     }
   );
+}
+
+// ---------------------------------------------------------------------------
+// Mapping Templates
+// ---------------------------------------------------------------------------
+
+export async function getMappingTemplates(): Promise<MappingTemplateSummary[]> {
+  return fetchAPI<MappingTemplateSummary[]>("/config/mapping-templates");
+}
+
+export async function deleteMappingTemplate(fingerprint: string) {
+  return fetchAPI(`/config/mapping-templates/${fingerprint}`, { method: "DELETE" });
+}
+
+export async function resetMappingTemplates() {
+  return fetchAPI("/config/mapping-templates/reset", { method: "POST" });
+}
+
+export async function checkTemplateMatch(jobId: string): Promise<TemplateMatch> {
+  return fetchAPI<TemplateMatch>(`/pipeline/template-check/${jobId}`);
 }

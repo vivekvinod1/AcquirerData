@@ -28,8 +28,9 @@ export default function RootLayout({
         <header className="bg-visa-navy text-white">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/visa-logo.svg" alt="Visa" className="h-8 w-auto" />
+              <div className="h-9 w-9 bg-visa-gold rounded-lg flex items-center justify-center">
+                <span className="text-visa-navy text-xl font-black leading-none">V</span>
+              </div>
               <div className="w-px h-8 bg-visa-gray-500" />
               <div>
                 <h1 className="text-lg font-bold tracking-tight">AMMF Data Preparation</h1>
@@ -47,12 +48,7 @@ export default function RootLayout({
                   Settings
                 </a>
               </nav>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-visa-gray-300">Powered by</span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/exl-logo.svg" alt="EXL" className="h-5 w-auto" />
-                <span className="text-xs font-semibold text-white">data.AI</span>
-              </div>
+              <span className="text-xs text-visa-gray-300">Powered by <span className="font-semibold text-white">EXLdata.ai</span></span>
             </div>
           </div>
         </header>

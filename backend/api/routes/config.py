@@ -631,3 +631,43 @@ async def get_llm_stats():
         "per_job": per_job,
         "recent_calls": [l.to_dict() for l in recent],
     }
+
+
+# ---------------------------------------------------------------------------
+# Mapping Templates (CRUD)
+# ---------------------------------------------------------------------------
+
+@router.get("/config/mapping-templates")
+async def get_mapping_templates():
+    """Return all saved mapping templates."""
+    from core.config_store import get_all_mapping_templates
+    templates = get_all_mapping_templates()
+    result = []
+    for fp, data in templates.items():
+        result.append({
+            "fingerprint": fp,
+            "name": data.get("name", f"Template {fp[:8]}"),
+            "created_at": data.get("created_at", ""),
+            "table_summary": data.get("table_summary", {}),
+            "has_user_instructions": bool(data.get("user_instructions")),
+            "violation_count": len(data.get("selected_violations", []) or []),
+        })
+    result.sort(key=lambda t: t["created_at"], reverse=True)
+    return result
+
+
+@router.delete("/config/mapping-templates/{fingerprint}")
+async def delete_mapping_template_endpoint(fingerprint: str):
+    """Delete a saved mapping template."""
+    from core.config_store import delete_mapping_template
+    if delete_mapping_template(fingerprint):
+        return {"status": "deleted", "fingerprint": fingerprint}
+    raise HTTPException(404, f"Template not found: {fingerprint[:16]}...")
+
+
+@router.post("/config/mapping-templates/reset")
+async def reset_all_mapping_templates():
+    """Delete all saved mapping templates."""
+    from core.config_store import reset_mapping_templates
+    reset_mapping_templates()
+    return {"status": "reset"}

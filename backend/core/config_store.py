@@ -247,3 +247,79 @@ DQ_RULES_METADATA = [
         "editable": False,
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# Mapping Templates — saved schema mappings keyed by input data fingerprint
+# ---------------------------------------------------------------------------
+
+_TEMPLATES_FILE = _DATA_DIR / "mapping_templates.json"
+
+
+def compute_schema_fingerprint(tables: dict) -> str:
+    """Compute a SHA-256 fingerprint from table names + column names.
+
+    Any change in table names or column names/order produces a different hash.
+    This is a strict match — same tables + same columns = same fingerprint.
+    """
+    import hashlib
+    parts = []
+    for table_name in sorted(tables.keys()):
+        df = tables[table_name]
+        cols = sorted(str(c) for c in df.columns)
+        parts.append(f"{table_name}:{','.join(cols)}")
+    canonical = "|".join(parts)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _load_mapping_templates() -> dict[str, dict]:
+    """Load saved mapping templates from disk."""
+    try:
+        if _TEMPLATES_FILE.exists():
+            return json.loads(_TEMPLATES_FILE.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _save_mapping_templates(templates: dict[str, dict]):
+    """Save mapping templates to disk."""
+    try:
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _TEMPLATES_FILE.write_text(json.dumps(templates, indent=2))
+    except Exception:
+        pass
+
+
+_mapping_templates: dict[str, dict] = _load_mapping_templates()
+
+
+def get_mapping_template(fingerprint: str) -> dict | None:
+    """Get a saved mapping template by fingerprint."""
+    return _mapping_templates.get(fingerprint)
+
+
+def save_mapping_template(fingerprint: str, data: dict):
+    """Save a mapping template."""
+    _mapping_templates[fingerprint] = data
+    _save_mapping_templates(_mapping_templates)
+
+
+def delete_mapping_template(fingerprint: str) -> bool:
+    """Delete a mapping template. Returns True if found."""
+    if fingerprint in _mapping_templates:
+        del _mapping_templates[fingerprint]
+        _save_mapping_templates(_mapping_templates)
+        return True
+    return False
+
+
+def get_all_mapping_templates() -> dict[str, dict]:
+    """Return all saved mapping templates."""
+    return dict(_mapping_templates)
+
+
+def reset_mapping_templates():
+    """Remove all saved mapping templates."""
+    _mapping_templates.clear()
+    _save_mapping_templates(_mapping_templates)

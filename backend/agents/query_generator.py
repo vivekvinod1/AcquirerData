@@ -127,6 +127,14 @@ No values were provided or auto-detected. You MUST look for a reference table
 tables listed above. JOIN to it and extract the correct values.
 If absolutely no reference data exists, use NULL (not 0 or 'UNKNOWN')."""
 
+    # Include user instructions if provided during review
+    user_notes_block = ""
+    if getattr(job, "user_instructions", None) and job.user_instructions.strip():
+        user_notes_block = f"""
+USER INSTRUCTIONS (the user provided these notes during review — follow them carefully):
+{job.user_instructions.strip()}
+"""
+
     user_prompt = f"""Generate a DuckDB SQL query to transform the source tables into AMMF format.
 
 SOURCE TABLES:
@@ -140,7 +148,7 @@ RELATIONSHIPS:
 Main table: {relationships.get('main_table', 'unknown')}
 
 {cib_block}
-
+{user_notes_block}
 TARGET FORMAT:
 {ammf_spec}
 

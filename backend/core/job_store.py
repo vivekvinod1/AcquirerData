@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
-from core.models import PipelineStep, PipelineStatus, JobSummary, SchemaMapping, QualityReport, ViolationReport
+from core.models import PipelineStep, PipelineStatus, JobSummary, SchemaMapping, QualityReport, ViolationReport, DataDictionaryEntry
 from core.db_engine import DuckDBEngine
 import pandas as pd
 
@@ -39,6 +39,11 @@ class Job:
         self.ingestion_dq_report: QualityReport | None = None  # DQ on raw input (pre-mapping)
         self.schema_approved: bool = False
         self.chat_history: list[dict] = []  # [{role, content}]
+        self.data_dictionary: list[DataDictionaryEntry] | None = None  # Extracted from dictionary sheets
+        self.user_instructions: str | None = None  # Free-form notes for SQL generation
+        self.schema_fingerprint: str | None = None
+        self.template_applied: bool = False
+        self.force_review: bool = False
 
     def get_status(self) -> PipelineStatus:
         return PipelineStatus(

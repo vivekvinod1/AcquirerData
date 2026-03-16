@@ -31,6 +31,7 @@ async def run_pipeline(request: PipelineRunRequest, background_tasks: Background
     job.selected_steps = request.selected_steps
     if request.selected_violations is not None:
         job.selected_violations = request.selected_violations
+    job.force_review = request.force_review
 
     from agents.orchestrator import run_pipeline_async
     background_tasks.add_task(run_pipeline_async, job)
@@ -51,6 +52,28 @@ async def continue_pipeline(request: PipelineContinueRequest, background_tasks: 
     job.schema_approved = True
     if request.selected_violations is not None:
         job.selected_violations = request.selected_violations
+    if request.user_instructions:
+        job.user_instructions = request.user_instructions
+
+    if request.save_as_template:
+        from core.config_store import compute_schema_fingerprint, save_mapping_template
+        if job.tables and job.schema_mapping:
+            fp = compute_schema_fingerprint(job.tables)
+            job.schema_fingerprint = fp
+            template_data = {
+                "fingerprint": fp,
+                "name": request.template_name or f"Template {fp[:8]}",
+                "created_at": __import__("datetime").datetime.now().isoformat(),
+                "table_summary": {
+                    name: sorted(str(c) for c in df.columns)
+                    for name, df in job.tables.items()
+                },
+                "schema_mapping": job.schema_mapping.model_dump(),
+                "user_instructions": job.user_instructions,
+                "selected_violations": list(job.selected_violations) if job.selected_violations else None,
+            }
+            save_mapping_template(fp, template_data)
+            job.add_message(f"Saved mapping as template: '{template_data['name']}'")
 
     from agents.orchestrator import run_pipeline_phase2
     background_tasks.add_task(run_pipeline_phase2, job)
@@ -212,3 +235,26 @@ async def get_reference_values(job_id: str):
                     break
 
     return {"source_table": source_table, "fields": results}
+
+
+@router.get("/pipeline/template-check/{job_id}")
+async def check_template_match(job_id: str):
+    """Check if a saved mapping template matches the uploaded data's schema."""
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if not job.tables:
+        return {"match": False, "fingerprint": None, "template_name": None}
+
+    from core.config_store import compute_schema_fingerprint, get_mapping_template
+    fp = compute_schema_fingerprint(job.tables)
+    template = get_mapping_template(fp)
+
+    if template:
+        return {
+            "match": True,
+            "fingerprint": fp,
+            "template_name": template.get("name", "Unnamed"),
+            "created_at": template.get("created_at"),
+        }
+    return {"match": False, "fingerprint": fp, "template_name": None}

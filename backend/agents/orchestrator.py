@@ -37,6 +37,49 @@ async def run_ingestion_phase(job: Job):
     llm_client.bind_job(job)
 
     try:
+        # ── Template matching: skip schema mapping if a saved template matches ──
+        from core.config_store import compute_schema_fingerprint, get_mapping_template
+        from core.models import SchemaMapping
+
+        fingerprint = compute_schema_fingerprint(job.tables)
+        job.schema_fingerprint = fingerprint
+
+        if not job.force_review:
+            template = get_mapping_template(fingerprint)
+            if template:
+                template_name = template.get("name", "Unnamed")
+                job.add_message(f"Matched saved mapping template: '{template_name}'")
+                job.schema_mapping = SchemaMapping(**template["schema_mapping"])
+                if template.get("user_instructions"):
+                    job.user_instructions = template["user_instructions"]
+                if template.get("selected_violations") is not None:
+                    job.selected_violations = template["selected_violations"]
+                job.template_applied = True
+
+                mapped_count = sum(1 for m in job.schema_mapping.mappings if m.source_column or m.is_derived)
+                job.add_message(f"Template applied: {mapped_count} of {len(job.schema_mapping.mappings)} columns mapped — skipping review")
+
+                # Run input DQ (still useful even with template)
+                job.set_step(PipelineStep.INGESTION, 5)
+                job.add_message("Running input data quality analysis...")
+                from agents.quality_analyzer import run_quality_analysis
+                job.ingestion_dq_report = run_quality_analysis(job)
+                job.add_message("Input data quality analysis complete")
+
+                # Run completeness check
+                job.set_step(PipelineStep.INGESTION, 15)
+                from agents.completeness_checker import run_completeness_check
+                completeness = run_completeness_check(job.schema_mapping)
+                if completeness["missing_required"]:
+                    job.add_message(f"WARNING: Missing required fields: {completeness['missing_required']}")
+
+                # Skip straight to phase 2
+                job.set_step(PipelineStep.INGESTION, 20)
+                job.add_message("Auto-approved via saved template — proceeding to transformation")
+                job.schema_approved = True
+                await run_pipeline_phase2(job)
+                return
+
         # Step A: Input Data Quality (on raw uploaded tables)
         job.set_step(PipelineStep.INGESTION, 5)
         job.add_message("Running input data quality analysis on uploaded tables...")

@@ -6,9 +6,9 @@ import PipelineStepper from "@/components/PipelineStepper";
 import IngestionReview from "@/components/IngestionReview";
 import ChatPanel from "@/components/ChatPanel";
 import ViolationRuleSelector from "@/components/ViolationRuleSelector";
-import { getPipelineStatus, runPipeline, getReferenceValues, getViolationRules } from "@/lib/api";
+import { getPipelineStatus, runPipeline, getViolationRules, checkTemplateMatch } from "@/lib/api";
 import { DEFAULT_UNCHECKED_VIOLATIONS } from "@/lib/constants";
-import type { PipelineStatus, CIBBINConfig, ReferenceValues, ViolationRuleInfo } from "@/lib/types";
+import type { PipelineStatus, ViolationRuleInfo, TemplateMatch } from "@/lib/types";
 
 /** Steps shown in the pre-start selector (validation-only mode) */
 const AVAILABLE_STEPS = [
@@ -19,66 +19,6 @@ const AVAILABLE_STEPS = [
   { key: "validation", label: "Violation Checks", desc: "Run Visa compliance rules" },
 ];
 
-/* ---------- CIB/BIN field: combo dropdown + manual input ---------- */
-function CIBField({
-  label,
-  value,
-  options,
-  sourceInfo,
-  onChange,
-  placeholder,
-  numeric,
-}: {
-  label: string;
-  value: string | number;
-  options?: string[];
-  sourceInfo?: { source_table: string; source_column: string; values: string[] };
-  onChange: (v: string) => void;
-  placeholder?: string;
-  numeric?: boolean;
-}) {
-  const hasOptions = options && options.length > 0;
-  return (
-    <div>
-      <label className="block text-sm font-medium text-visa-gray-700 mb-1">
-        {label}
-        {sourceInfo && (
-          <span className="ml-2 text-xs font-normal text-visa-gray-400">
-            from {sourceInfo.source_column}
-          </span>
-        )}
-      </label>
-      {hasOptions ? (
-        <div className="relative">
-          <select
-            value={String(value)}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm bg-white appearance-none pr-8"
-          >
-            <option value="">— auto-detect —</option>
-            {options.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-            <svg className="h-4 w-4 text-visa-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
-      ) : (
-        <input
-          type={numeric ? "number" : "text"}
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm"
-          placeholder={placeholder}
-        />
-      )}
-    </div>
-  );
-}
-
 export default function PipelineDashboard({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = use(params);
   const router = useRouter();
@@ -87,18 +27,11 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
   const [selectedSteps, setSelectedSteps] = useState<Set<string>>(
     new Set(AVAILABLE_STEPS.map((s) => s.key))
   );
-  const [cibConfig, setCibConfig] = useState<CIBBINConfig>({
-    processor_name: "",
-    processor_bin_cib: 0,
-    acquirer_name: "",
-    acquirer_bid: 0,
-    acquirer_bin: 0,
-  });
-  const [refValues, setRefValues] = useState<ReferenceValues | null>(null);
-  const [loadingRef, setLoadingRef] = useState(false);
   const [mode, setMode] = useState<"full" | "validation_only">("full");
   const [violationRules, setViolationRules] = useState<ViolationRuleInfo[]>([]);
   const [selectedViolations, setSelectedViolations] = useState<Set<string>>(new Set());
+  const [templateMatch, setTemplateMatch] = useState<TemplateMatch | null>(null);
+  const [forceReview, setForceReview] = useState(false);
 
   const pollStatus = useCallback(async () => {
     try {
@@ -112,12 +45,6 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
 
   useEffect(() => {
     pollStatus();
-    // Load reference values from uploaded data
-    setLoadingRef(true);
-    getReferenceValues(jobId)
-      .then((rv) => setRefValues(rv))
-      .catch(() => {})
-      .finally(() => setLoadingRef(false));
     // Load violation rules for the selector
     getViolationRules()
       .then((rules) => {
@@ -127,6 +54,9 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
           new Set(rules.map((r) => r.id).filter((id) => !DEFAULT_UNCHECKED_VIOLATIONS.has(id)))
         );
       })
+      .catch(() => {});
+    checkTemplateMatch(jobId)
+      .then((match) => setTemplateMatch(match))
       .catch(() => {});
   }, [pollStatus, jobId]);
 
@@ -171,19 +101,13 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
     setRunning(true);
     const violations = Array.from(selectedViolations);
     if (mode === "full") {
-      // Full pipeline: Phase 1 (ingestion) runs automatically, no step selection needed
-      // Violations are selected during the review gate, but we store the initial selection
-      const hasAnyValue =
-        cibConfig.processor_name ||
-        cibConfig.processor_bin_cib ||
-        cibConfig.acquirer_name ||
-        cibConfig.acquirer_bid ||
-        cibConfig.acquirer_bin;
-      await runPipeline(jobId, hasAnyValue ? cibConfig : undefined, undefined, violations);
+      // Full pipeline: Phase 1 (ingestion) runs automatically
+      // CIB/BIN values are auto-detected from the uploaded data
+      await runPipeline(jobId, undefined, undefined, violations, forceReview);
     } else {
       // Validation-only mode: pass selected steps + violations
       const steps = Array.from(selectedSteps);
-      await runPipeline(jobId, undefined, steps, violations);
+      await runPipeline(jobId, undefined, steps, violations, false);
     }
   };
 
@@ -228,6 +152,34 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
       {/* ── Initial Upload State: Step Selector + Config ── */}
       {step === "uploaded" && !running && (
         <div className="space-y-6">
+          {/* Template Match Banner */}
+          {templateMatch?.match && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-green-800">
+                    Saved Template Match: &ldquo;{templateMatch.template_name}&rdquo;
+                  </h4>
+                  <p className="text-sm text-green-700 mt-1">
+                    A saved mapping template matches your uploaded data. The schema review step will be skipped automatically.
+                  </p>
+                  <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={forceReview}
+                      onChange={(e) => setForceReview(e.target.checked)}
+                      className="h-4 w-4 accent-[#1A1F71]"
+                    />
+                    <span className="text-sm text-green-800">Force manual review (ignore saved template)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Mode Selector */}
           <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -306,77 +258,6 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
               </div>
             )}
           </div>
-
-          {/* CIB/BIN Config — only show in full pipeline mode when transform steps will run */}
-          {mode === "full" && (
-            <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-semibold text-visa-navy">Configure Processor / Acquirer Details</h3>
-                  <p className="text-sm text-visa-gray-500 mt-1">
-                    {refValues?.source_table
-                      ? <>Values detected from <span className="font-medium text-visa-navy">{refValues.source_table}</span>. Select from dropdown or leave blank to auto-detect.</>
-                      : "Leave blank to auto-detect from uploaded data."}
-                  </p>
-                </div>
-                {loadingRef && (
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-visa-navy border-t-transparent" />
-                )}
-              </div>
-
-              {refValues?.source_table && (
-                <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-                  Reference data found in uploaded file. Dropdowns show available values. You can also type a custom value.
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <CIBField
-                  label="Processor Name"
-                  value={cibConfig.processor_name}
-                  options={refValues?.fields?.processor_name?.values}
-                  sourceInfo={refValues?.fields?.processor_name}
-                  onChange={(v) => setCibConfig({ ...cibConfig, processor_name: v })}
-                  placeholder="e.g., SwiftSwitch Networks"
-                />
-                <CIBField
-                  label="Processor BIN/CIB"
-                  value={cibConfig.processor_bin_cib || ""}
-                  options={refValues?.fields?.processor_bin_cib?.values}
-                  sourceInfo={refValues?.fields?.processor_bin_cib}
-                  onChange={(v) => setCibConfig({ ...cibConfig, processor_bin_cib: Number(v) || 0 })}
-                  placeholder="e.g., 422983"
-                  numeric
-                />
-                <CIBField
-                  label="Acquirer Name"
-                  value={cibConfig.acquirer_name}
-                  options={refValues?.fields?.acquirer_name?.values}
-                  sourceInfo={refValues?.fields?.acquirer_name}
-                  onChange={(v) => setCibConfig({ ...cibConfig, acquirer_name: v })}
-                  placeholder="e.g., Meridian Credit Bank"
-                />
-                <CIBField
-                  label="Acquirer BID"
-                  value={cibConfig.acquirer_bid || ""}
-                  options={refValues?.fields?.acquirer_bid?.values}
-                  sourceInfo={refValues?.fields?.acquirer_bid}
-                  onChange={(v) => setCibConfig({ ...cibConfig, acquirer_bid: Number(v) || 0 })}
-                  placeholder="e.g., 48364142"
-                  numeric
-                />
-                <CIBField
-                  label="Acquirer BIN"
-                  value={cibConfig.acquirer_bin || ""}
-                  options={refValues?.fields?.acquirer_bin?.values}
-                  sourceInfo={refValues?.fields?.acquirer_bin}
-                  onChange={(v) => setCibConfig({ ...cibConfig, acquirer_bin: Number(v) || 0 })}
-                  placeholder="e.g., 419489"
-                  numeric
-                />
-              </div>
-            </div>
-          )}
 
           {/* Violation Rule Selector */}
           {violationRules.length > 0 && (

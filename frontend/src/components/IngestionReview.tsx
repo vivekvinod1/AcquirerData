@@ -31,6 +31,9 @@ export default function IngestionReview({ jobId, onContinue }: Props) {
   const [continuing, setContinuing] = useState(false);
   const [mappingSaved, setMappingSaved] = useState(false);
   const [gapAccepted, setGapAccepted] = useState(false);
+  const [userInstructions, setUserInstructions] = useState("");
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
 
   // Load all data on mount
   useEffect(() => {
@@ -71,7 +74,13 @@ export default function IngestionReview({ jobId, onContinue }: Props) {
     if (!canContinue) return;
     setContinuing(true);
     try {
-      await continuePipeline(jobId, Array.from(selectedViolations));
+      await continuePipeline(
+        jobId,
+        Array.from(selectedViolations),
+        userInstructions.trim() || undefined,
+        saveAsTemplate,
+        saveAsTemplate ? (templateName.trim() || undefined) : undefined
+      );
       onContinue();
     } catch (e) {
       console.error("Failed to continue pipeline:", e);
@@ -300,6 +309,57 @@ export default function IngestionReview({ jobId, onContinue }: Props) {
           Gaps accepted — you may proceed despite unmapped required columns.
         </div>
       )}
+
+      {/* User Instructions for SQL Generation */}
+      <div className="bg-white rounded-lg border border-visa-gray-200 p-4">
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-visa-navy flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold text-visa-navy">Notes for SQL Generation</h4>
+            <p className="text-xs text-visa-gray-500 mt-0.5">
+              Optional — provide any specific instructions for the AI when generating the transformation SQL.
+            </p>
+            <textarea
+              value={userInstructions}
+              onChange={(e) => setUserInstructions(e.target.value)}
+              placeholder="e.g., Filter out rows where status is 'inactive', use LEFT JOIN for address table, date format should be YYYYMMDD, country code is always 356..."
+              className="mt-2 w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm text-visa-gray-700 placeholder:text-visa-gray-400 focus:outline-none focus:ring-2 focus:ring-visa-navy/30 focus:border-visa-navy resize-y min-h-[60px]"
+              rows={2}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Save as Template */}
+      <div className="bg-white rounded-lg border border-visa-gray-200 p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={saveAsTemplate}
+            onChange={(e) => setSaveAsTemplate(e.target.checked)}
+            className="mt-1 h-4 w-4 accent-[#1A1F71]"
+          />
+          <div className="flex-1">
+            <span className="text-sm font-semibold text-visa-navy">
+              Save this mapping as a template
+            </span>
+            <p className="text-xs text-visa-gray-500 mt-0.5">
+              Future uploads with the same data structure will automatically use this mapping, skipping the review step.
+            </p>
+            {saveAsTemplate && (
+              <input
+                type="text"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Template name (optional, e.g. 'Q1 Acquirer Feed')"
+                className="mt-2 w-full border border-visa-gray-300 rounded-lg px-3 py-2 text-sm text-visa-gray-700 placeholder:text-visa-gray-400 focus:outline-none focus:ring-2 focus:ring-visa-navy/30 focus:border-visa-navy"
+              />
+            )}
+          </div>
+        </label>
+      </div>
 
       {/* Continue button */}
       <button

@@ -31,6 +31,15 @@ export interface PipelineStatus {
   completed_at: string | null;
 }
 
+export interface MappingCandidate {
+  source_table: string | null;
+  source_column: string | null;
+  confidence: number;
+  reasoning: string;
+  is_derived: boolean;
+  derivation_logic: string;
+}
+
 export interface ColumnMapping {
   ammf_column: string;
   source_table: string | null;
@@ -39,6 +48,7 @@ export interface ColumnMapping {
   reasoning: string;
   is_derived: boolean;
   derivation_logic: string;
+  alternatives: MappingCandidate[];
 }
 
 export interface SchemaMapping {
@@ -205,4 +215,24 @@ export interface ViolationRuleInfo {
   name: string;
   description: string;
   columns: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Mapping Template types
+// ---------------------------------------------------------------------------
+
+export interface MappingTemplateSummary {
+  fingerprint: string;
+  name: string;
+  created_at: string;
+  table_summary: Record<string, string[]>;
+  has_user_instructions: boolean;
+  violation_count: number | null;
+}
+
+export interface TemplateMatch {
+  match: boolean;
+  fingerprint: string | null;
+  template_name: string | null;
+  created_at?: string;
 }

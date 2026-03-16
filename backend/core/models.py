@@ -39,6 +39,16 @@ class PipelineStatus(BaseModel):
     completed_at: str | None = None
 
 
+class MappingCandidate(BaseModel):
+    """A single candidate mapping for an AMMF column."""
+    source_table: str | None = None
+    source_column: str | None = None
+    confidence: float = 0.0
+    reasoning: str = ""
+    is_derived: bool = False
+    derivation_logic: str = ""
+
+
 class ColumnMapping(BaseModel):
     ammf_column: str
     source_table: str | None = None
@@ -47,6 +57,15 @@ class ColumnMapping(BaseModel):
     reasoning: str = ""
     is_derived: bool = False
     derivation_logic: str = ""
+    alternatives: list[MappingCandidate] = []  # Ranked runner-up candidates
+
+
+class DataDictionaryEntry(BaseModel):
+    """A single entry from a data dictionary sheet."""
+    column_name: str
+    description: str
+    source_table: str | None = None
+    data_type: str | None = None
 
 
 class SchemaMapping(BaseModel):
@@ -117,12 +136,26 @@ class PipelineRunRequest(BaseModel):
     cib_bin_config: CIBBINConfig | None = None
     selected_steps: list[str] | None = None  # None = all steps; e.g. ["schema_mapping","quality","validation"]
     selected_violations: list[str] | None = None  # None = defaults; e.g. ["V1","V2",...]
+    force_review: bool = False
 
 
 class PipelineContinueRequest(BaseModel):
     """Resume pipeline after human approval of ingestion results."""
     job_id: str
     selected_violations: list[str] | None = None  # Which violation rules to run
+    user_instructions: str | None = None  # Free-form notes for the SQL generation LLM
+    save_as_template: bool = False
+    template_name: str | None = None
+
+
+class MappingTemplateSummary(BaseModel):
+    """Summary of a saved mapping template for API responses."""
+    fingerprint: str
+    name: str
+    created_at: str
+    table_summary: dict[str, list[str]]
+    has_user_instructions: bool = False
+    violation_count: int | None = None
 
 
 class ChatRequest(BaseModel):

@@ -17,6 +17,9 @@ import {
   generateResolutionStrategy,
   getLLMStats,
   generateViolationRule,
+  getMappingTemplates,
+  deleteMappingTemplate,
+  resetMappingTemplates,
   type DQRule,
   type ConfigViolationRule,
   type PromptConfig,
@@ -25,6 +28,7 @@ import {
   type LLMStats,
   type GeneratedRule,
 } from "@/lib/api";
+import type { MappingTemplateSummary } from "@/lib/types";
 
 // ============================================================================
 // Shared Components
@@ -98,7 +102,7 @@ function SuccessToast({ message }: { message: string }) {
 // Tab Navigation
 // ============================================================================
 
-type SettingsTab = "rules" | "prompts" | "llm";
+type SettingsTab = "rules" | "prompts" | "llm" | "templates";
 
 const TABS: { key: SettingsTab; label: string; icon: React.ReactNode }[] = [
   {
@@ -125,6 +129,15 @@ const TABS: { key: SettingsTab; label: string; icon: React.ReactNode }[] = [
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    ),
+  },
+  {
+    key: "templates",
+    label: "Mapping Templates",
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
       </svg>
     ),
   },
@@ -1471,6 +1484,153 @@ function PromptBlock({ label, content, isOutput }: { label: string; content: str
 // Main Settings Page
 // ============================================================================
 
+// ============================================================================
+// Mapping Templates Section
+// ============================================================================
+
+function MappingTemplatesSection({ onReload }: { onReload: () => void }) {
+  const [templates, setTemplates] = useState<MappingTemplateSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setTemplates(await getMappingTemplates());
+    } catch (e) {
+      setError(`Failed to load templates: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (fp: string) => {
+    if (!confirm("Delete this mapping template? Future runs with this data structure will require manual review again.")) return;
+    setDeleting(fp);
+    try {
+      await deleteMappingTemplate(fp);
+      setTemplates((prev) => prev.filter((t) => t.fingerprint !== fp));
+      setToast("Template deleted");
+      setTimeout(() => setToast(null), 3000);
+    } catch (e) {
+      setError(`Failed to delete: ${e}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleResetAll = async () => {
+    if (!confirm("Delete ALL mapping templates? This cannot be undone.")) return;
+    try {
+      await resetMappingTemplates();
+      setTemplates([]);
+      setToast("All templates deleted");
+      setTimeout(() => setToast(null), 3000);
+    } catch (e) {
+      setError(`Failed to reset: ${e}`);
+    }
+  };
+
+  if (loading) return <SectionSpinner text="Loading mapping templates..." />;
+  if (error) return <ErrorBanner message={error} onRetry={load} />;
+
+  if (templates.length === 0) {
+    return (
+      <EmptyState
+        icon={
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+          </svg>
+        }
+        title="No saved mapping templates"
+        subtitle="Templates are created when you approve a schema mapping and check 'Save as template'"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Reset All button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleResetAll}
+          className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition"
+        >
+          Delete All Templates
+        </button>
+      </div>
+
+      {/* Template cards */}
+      <div className="space-y-3">
+        {templates.map((t) => (
+          <div key={t.fingerprint} className="bg-white rounded-xl border border-visa-gray-200 p-5 hover:border-visa-gray-300 transition">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-visa-navy text-sm truncate">{t.name}</h4>
+                  <span className="px-2 py-0.5 text-[10px] font-mono bg-visa-gray-100 text-visa-gray-500 rounded">
+                    {t.fingerprint.slice(0, 8)}
+                  </span>
+                </div>
+                <p className="text-xs text-visa-gray-500 mt-1">
+                  Created {new Date(t.created_at).toLocaleDateString()} at{" "}
+                  {new Date(t.created_at).toLocaleTimeString()}
+                </p>
+
+                {/* Table summary */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {Object.entries(t.table_summary).map(([table, cols]) => (
+                    <span
+                      key={table}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg border border-blue-100"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      {table}
+                      <span className="text-blue-500">({(cols as string[]).length} cols)</span>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Metadata badges */}
+                <div className="mt-2 flex gap-2">
+                  {t.has_user_instructions && (
+                    <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-100">
+                      Has SQL instructions
+                    </span>
+                  )}
+                  {t.violation_count != null && t.violation_count > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 bg-visa-gray-50 text-visa-gray-600 rounded-full border border-visa-gray-200">
+                      {t.violation_count} violation rules
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <button
+                onClick={() => handleDelete(t.fingerprint)}
+                disabled={deleting === t.fingerprint}
+                className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
+              >
+                {deleting === t.fingerprint ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {toast && <SuccessToast message={toast} />}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<SettingsTab>("rules");
@@ -1491,6 +1651,8 @@ export default function SettingsPage() {
   const [llmStats, setLlmStats] = useState<LLMStats | null>(null);
   const [llmLoading, setLlmLoading] = useState(true);
   const [llmError, setLlmError] = useState<string | null>(null);
+
+  const [templatesKey, setTemplatesKey] = useState(0);
 
   const loadDQ = useCallback(async () => {
     setDqLoading(true);
@@ -1647,6 +1809,18 @@ export default function SettingsPage() {
             </p>
           </div>
           <LLMUsageSection stats={llmStats} loading={llmLoading} error={llmError} onRetry={loadLLM} />
+        </section>
+      )}
+
+      {activeTab === "templates" && (
+        <section>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-visa-navy">Mapping Templates</h2>
+            <p className="text-sm text-visa-gray-500 mt-0.5">
+              Saved schema mappings that auto-apply when uploaded data matches. Templates are keyed by data structure (table names + column names).
+            </p>
+          </div>
+          <MappingTemplatesSection key={templatesKey} onReload={() => setTemplatesKey((k) => k + 1)} />
         </section>
       )}
     </div>
