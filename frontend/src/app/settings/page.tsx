@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   getDQRules,
+  updateDQRule,
+  resetDQRule,
+  resetAllDQRules,
   getConfigViolationRules,
   updateViolationRule,
   createViolationRule,
@@ -149,13 +152,60 @@ const TABS: { key: SettingsTab; label: string; icon: React.ReactNode }[] = [
 // DQ Rules Section
 // ============================================================================
 
-function DQRulesSection({ rules, loading, error, onRetry }: {
+function DQRulesSection({ rules, loading, error, onRetry, onReload }: {
   rules: DQRule[];
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  onReload: () => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ name: string; description: string; threshold: string; severity: string }>({ name: "", description: "", threshold: "", severity: "" });
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+  const handleToggle = async (rule: DQRule) => {
+    try {
+      await updateDQRule(rule.id, { enabled: !rule.enabled });
+      showToast(`${rule.id} ${rule.enabled ? "disabled" : "enabled"}`);
+      onReload();
+    } catch { /* ignore */ }
+  };
+
+  const startEdit = (rule: DQRule) => {
+    setEditingId(rule.id);
+    setEditForm({ name: rule.name, description: rule.description, threshold: rule.threshold, severity: rule.severity });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    try {
+      await updateDQRule(editingId, editForm);
+      setEditingId(null);
+      showToast(`${editingId} updated`);
+      onReload();
+    } catch (err) { alert(`Failed to save: ${err}`); }
+  };
+
+  const handleReset = async (ruleId: string) => {
+    if (!confirm(`Reset ${ruleId} to default?`)) return;
+    try {
+      await resetDQRule(ruleId);
+      showToast(`${ruleId} reset to default`);
+      onReload();
+    } catch { /* ignore */ }
+  };
+
+  const handleResetAll = async () => {
+    if (!confirm("Reset ALL data quality rules to factory defaults?")) return;
+    try {
+      await resetAllDQRules();
+      showToast("All DQ rules reset to defaults");
+      onReload();
+    } catch { /* ignore */ }
+  };
 
   if (loading) return <SectionSpinner text="Loading data quality rules..." />;
   if (error) return <ErrorBanner message={error} onRetry={onRetry} />;
@@ -170,53 +220,131 @@ function DQRulesSection({ rules, loading, error, onRetry }: {
   }
 
   return (
-    <div className="space-y-2">
-      {rules.map((rule) => {
-        const isOpen = expanded === rule.id;
-        return (
-          <div key={rule.id} className="border border-visa-gray-200 rounded-xl overflow-hidden bg-white transition-shadow hover:shadow-sm">
-            <button
-              onClick={() => setExpanded(isOpen ? null : rule.id)}
-              className="w-full flex items-center gap-4 p-4 text-left hover:bg-visa-gray-50/50 transition"
-            >
-              <div className="flex-shrink-0 w-11 h-7 bg-gradient-to-br from-visa-navy to-visa-blue text-white rounded-lg flex items-center justify-center text-[11px] font-bold shadow-sm">
-                {rule.id}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="font-semibold text-sm text-visa-navy">{rule.name}</span>
-                  <SeverityBadge severity={rule.severity} />
-                  <span className="px-2 py-0.5 bg-visa-gray-100 text-visa-gray-500 rounded text-[10px] font-medium tracking-wide uppercase">System</span>
+    <>
+      {toast && <SuccessToast message={toast} />}
+
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-visa-gray-500">
+          {rules.length} checks configured &middot; {rules.filter(r => r.enabled).length} enabled
+        </p>
+        <button onClick={handleResetAll} className="px-3 py-1.5 text-xs font-medium text-visa-gray-600 bg-visa-gray-100 rounded-lg hover:bg-visa-gray-200 transition">
+          Reset All
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {rules.map((rule) => {
+          const isOpen = expanded === rule.id;
+          const isEditing = editingId === rule.id;
+          return (
+            <div key={rule.id} className={`border rounded-xl overflow-hidden bg-white transition-all ${!rule.enabled ? "opacity-50 border-visa-gray-200" : "border-visa-gray-200 hover:shadow-sm"}`}>
+              <div className="flex items-center gap-3 p-4">
+                {/* Toggle */}
+                <button
+                  onClick={() => handleToggle(rule)}
+                  className={`flex-shrink-0 w-10 h-[22px] rounded-full transition-colors relative ${rule.enabled ? "bg-green-500" : "bg-visa-gray-300"}`}
+                >
+                  <div className={`absolute top-[2px] w-[18px] h-[18px] bg-white rounded-full shadow-sm transition-transform ${rule.enabled ? "left-[20px]" : "left-[2px]"}`} />
+                </button>
+
+                {/* Expand trigger */}
+                <button
+                  onClick={() => setExpanded(isOpen ? null : rule.id)}
+                  className="flex-1 flex items-center gap-3 text-left min-w-0"
+                >
+                  <div className="flex-shrink-0 w-11 h-7 bg-gradient-to-br from-visa-navy to-visa-blue text-white rounded-lg flex items-center justify-center text-[11px] font-bold shadow-sm">
+                    {rule.id}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm text-visa-navy truncate">{rule.name}</span>
+                      <SeverityBadge severity={rule.severity} />
+                      {rule.is_modified && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-[10px] font-semibold uppercase tracking-wide">Modified</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-visa-gray-500 mt-0.5 truncate">{rule.description}</p>
+                  </div>
+                  <svg className={`w-4 h-4 text-visa-gray-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {/* Quick actions */}
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => startEdit(rule)} className="p-1.5 text-visa-gray-400 hover:text-visa-navy hover:bg-visa-gray-100 rounded-lg transition" title="Edit">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  {rule.is_modified && (
+                    <button onClick={() => handleReset(rule.id)} className="p-1.5 text-visa-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Reset to default">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
-              <svg className={`w-4 h-4 text-visa-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {isOpen && (
-              <div className="px-4 pb-4 pt-0 border-t border-visa-gray-100">
-                <div className="bg-visa-gray-50 rounded-lg p-4 mt-3 space-y-3">
-                  <div>
-                    <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Description</span>
-                    <p className="text-sm text-visa-gray-700 mt-1">{rule.description}</p>
-                  </div>
-                  <div className="flex gap-6">
+
+              {/* Edit form */}
+              {isEditing && (
+                <div className="border-t border-visa-gray-100 px-4 pb-4 pt-3 bg-blue-50/30">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Threshold</span>
-                      <p className="text-sm text-visa-navy font-medium mt-1">{rule.threshold}</p>
+                      <label className="text-[11px] font-semibold text-visa-gray-500 uppercase">Name</label>
+                      <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full mt-1 text-sm border border-visa-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-visa-navy" />
                     </div>
                     <div>
-                      <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Severity</span>
-                      <p className="mt-1"><SeverityBadge severity={rule.severity} /></p>
+                      <label className="text-[11px] font-semibold text-visa-gray-500 uppercase">Threshold</label>
+                      <input value={editForm.threshold} onChange={(e) => setEditForm({ ...editForm, threshold: e.target.value })} className="w-full mt-1 text-sm border border-visa-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-visa-navy" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[11px] font-semibold text-visa-gray-500 uppercase">Description</label>
+                      <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} className="w-full mt-1 text-sm border border-visa-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-visa-navy" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-visa-gray-500 uppercase">Severity</label>
+                      <select value={editForm.severity} onChange={(e) => setEditForm({ ...editForm, severity: e.target.value })} className="w-full mt-1 text-sm border border-visa-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-visa-navy">
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={handleSaveEdit} className="px-4 py-2 bg-visa-navy text-white text-xs font-medium rounded-lg hover:bg-visa-blue transition">Save</button>
+                    <button onClick={() => setEditingId(null)} className="px-4 py-2 bg-visa-gray-200 text-visa-gray-700 text-xs font-medium rounded-lg hover:bg-visa-gray-300 transition">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Expanded detail */}
+              {isOpen && !isEditing && (
+                <div className="px-4 pb-4 pt-0 border-t border-visa-gray-100">
+                  <div className="bg-visa-gray-50 rounded-lg p-4 mt-3 space-y-3">
+                    <div>
+                      <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Description</span>
+                      <p className="text-sm text-visa-gray-700 mt-1">{rule.description}</p>
+                    </div>
+                    <div className="flex gap-6">
+                      <div>
+                        <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Threshold</span>
+                        <p className="text-sm text-visa-navy font-medium mt-1">{rule.threshold}</p>
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-semibold text-visa-gray-500 uppercase tracking-wide">Severity</span>
+                        <p className="mt-1"><SeverityBadge severity={rule.severity} /></p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -1965,17 +2093,6 @@ export default function SettingsPage() {
       {/* Tab Content */}
       {activeTab === "rules" && (
         <div className="space-y-8">
-          {/* DQ Rules */}
-          <section>
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-visa-navy">Data Quality Checks</h2>
-              <p className="text-sm text-visa-gray-500 mt-0.5">
-                System-defined checks that run automatically on uploaded data during ingestion.
-              </p>
-            </div>
-            <DQRulesSection rules={dqRules} loading={dqLoading} error={dqError} onRetry={loadDQ} />
-          </section>
-
           {/* Violation Rules */}
           <section>
             <div className="mb-4">
@@ -1991,6 +2108,17 @@ export default function SettingsPage() {
               onRetry={loadVR}
               onReload={loadVR}
             />
+          </section>
+
+          {/* DQ Rules */}
+          <section>
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-visa-navy">Data Quality Checks</h2>
+              <p className="text-sm text-visa-gray-500 mt-0.5">
+                Checks that run automatically on uploaded data during ingestion. You can edit thresholds and severity levels.
+              </p>
+            </div>
+            <DQRulesSection rules={dqRules} loading={dqLoading} error={dqError} onRetry={loadDQ} onReload={loadDQ} />
           </section>
         </div>
       )}

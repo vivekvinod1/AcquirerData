@@ -22,7 +22,7 @@ interface Props {
 type Tab = "dq" | "mapping" | "violations";
 
 export default function IngestionReview({ jobId, onContinue }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>("dq");
+  const [activeTab, setActiveTab] = useState<Tab>("mapping");
   const [dqReport, setDqReport] = useState<QualityReport | null>(null);
   const [mapping, setMapping] = useState<SchemaMapping | null>(null);
   const [rules, setRules] = useState<ViolationRuleInfo[]>([]);
@@ -153,7 +153,6 @@ export default function IngestionReview({ jobId, onContinue }: Props) {
   }
 
   const tabs: { key: Tab; label: string; badge?: string }[] = [
-    { key: "dq", label: "Input Data Quality" },
     {
       key: "mapping",
       label: "Schema Mapping",
@@ -161,6 +160,7 @@ export default function IngestionReview({ jobId, onContinue }: Props) {
         ? `${mapping!.unmapped_required.length} gaps`
         : undefined,
     },
+    { key: "dq", label: "Input Data Quality" },
     {
       key: "violations",
       label: "Violation Rules",

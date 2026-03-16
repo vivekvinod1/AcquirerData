@@ -202,17 +202,19 @@ def reset_prompts():
 
 
 # ---------------------------------------------------------------------------
-# DQ Rules metadata (read-only — these are hardcoded checks in the analyzer)
+# DQ Rules — editable data quality checks
 # ---------------------------------------------------------------------------
 
-DQ_RULES_METADATA = [
+_DQ_RULES_FILE = _DATA_DIR / "custom_dq_rules.json"
+
+_DEFAULT_DQ_RULES = [
     {
         "id": "DQ1",
         "name": "High Null Rate",
         "description": "Flags columns where more than 50% of values are null",
         "threshold": "50%",
         "severity": "warning",
-        "editable": False,
+        "enabled": True,
     },
     {
         "id": "DQ2",
@@ -220,7 +222,7 @@ DQ_RULES_METADATA = [
         "description": "Flags columns where 100% of values are null — column provides no data",
         "threshold": "100%",
         "severity": "critical",
-        "editable": False,
+        "enabled": True,
     },
     {
         "id": "DQ3",
@@ -228,7 +230,7 @@ DQ_RULES_METADATA = [
         "description": "Flags columns with only 1 distinct value across >10 rows (provides no differentiation)",
         "threshold": "1 distinct value",
         "severity": "info",
-        "editable": False,
+        "enabled": True,
     },
     {
         "id": "DQ4",
@@ -236,7 +238,7 @@ DQ_RULES_METADATA = [
         "description": "Flags columns where every value is unique across >100 rows (potential primary key)",
         "threshold": "100% unique",
         "severity": "info",
-        "editable": False,
+        "enabled": True,
     },
     {
         "id": "DQ5",
@@ -244,9 +246,77 @@ DQ_RULES_METADATA = [
         "description": "Detects string values that are empty or contain only whitespace characters",
         "threshold": "Any blank values",
         "severity": "warning",
-        "editable": False,
+        "enabled": True,
     },
 ]
+
+_custom_dq_rules: dict[str, dict] | None = None
+
+
+def _load_custom_dq_rules() -> dict[str, dict]:
+    global _custom_dq_rules
+    if _custom_dq_rules is None:
+        try:
+            if _DQ_RULES_FILE.exists():
+                _custom_dq_rules = json.loads(_DQ_RULES_FILE.read_text())
+            else:
+                _custom_dq_rules = {}
+        except Exception:
+            _custom_dq_rules = {}
+    return _custom_dq_rules
+
+
+def _save_custom_dq_rules(rules: dict[str, dict]):
+    global _custom_dq_rules
+    _custom_dq_rules = rules
+    try:
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _DQ_RULES_FILE.write_text(json.dumps(rules, indent=2))
+    except Exception:
+        pass
+
+
+def get_all_dq_rules() -> list[dict]:
+    """Return all DQ rules with custom overrides applied."""
+    custom = _load_custom_dq_rules()
+    result = []
+    for rule in _DEFAULT_DQ_RULES:
+        merged = {**rule, "is_modified": False, "editable": True}
+        if rule["id"] in custom:
+            merged.update(custom[rule["id"]])
+            merged["is_modified"] = True
+        result.append(merged)
+    return result
+
+
+def update_dq_rule(rule_id: str, updates: dict) -> dict | None:
+    """Update a DQ rule (name, description, threshold, severity, enabled)."""
+    default = next((r for r in _DEFAULT_DQ_RULES if r["id"] == rule_id), None)
+    if not default:
+        return None
+    custom = _load_custom_dq_rules()
+    existing = custom.get(rule_id, {})
+    existing.update(updates)
+    custom[rule_id] = existing
+    _save_custom_dq_rules(custom)
+    merged = {**default, **existing, "is_modified": True, "editable": True}
+    return merged
+
+
+def reset_dq_rule(rule_id: str):
+    """Reset a DQ rule to its default."""
+    custom = _load_custom_dq_rules()
+    custom.pop(rule_id, None)
+    _save_custom_dq_rules(custom)
+
+
+def reset_all_dq_rules():
+    """Reset all DQ rules to defaults."""
+    _save_custom_dq_rules({})
+
+
+# Keep backward compat
+DQ_RULES_METADATA = _DEFAULT_DQ_RULES
 
 
 # ---------------------------------------------------------------------------

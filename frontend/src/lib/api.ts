@@ -260,6 +260,8 @@ export interface DQRule {
   threshold: string;
   severity: string;
   editable: boolean;
+  enabled: boolean;
+  is_modified: boolean;
 }
 
 export interface ConfigViolationRule {
@@ -275,6 +277,18 @@ export interface ConfigViolationRule {
 
 export async function getDQRules(): Promise<DQRule[]> {
   return fetchAPI<DQRule[]>("/config/dq-rules");
+}
+
+export async function updateDQRule(ruleId: string, updates: Partial<Pick<DQRule, "name" | "description" | "threshold" | "severity" | "enabled">>): Promise<DQRule> {
+  return fetchAPI<DQRule>(`/config/dq-rules/${ruleId}`, { method: "PUT", body: JSON.stringify(updates), headers: { "Content-Type": "application/json" } });
+}
+
+export async function resetDQRule(ruleId: string): Promise<void> {
+  await fetchAPI(`/config/dq-rules/${ruleId}`, { method: "DELETE" });
+}
+
+export async function resetAllDQRules(): Promise<void> {
+  await fetchAPI("/config/dq-rules/reset", { method: "POST" });
 }
 
 export async function getConfigViolationRules(): Promise<ConfigViolationRule[]> {

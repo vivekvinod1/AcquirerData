@@ -1,4 +1,4 @@
-"""Configuration API — DQ rules (read-only) and Violation rules (CRUD)."""
+"""Configuration API — DQ rules (CRUD) and Violation rules (CRUD)."""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -7,14 +7,51 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# DQ Rules (read-only)
+# DQ Rules (CRUD)
 # ---------------------------------------------------------------------------
+
+class DQRuleUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    threshold: str | None = None
+    severity: str | None = None
+    enabled: bool | None = None
+
 
 @router.get("/config/dq-rules")
 async def get_dq_rules():
-    """Return metadata for all data quality rules (read-only)."""
-    from core.config_store import DQ_RULES_METADATA
-    return DQ_RULES_METADATA
+    """Return all DQ rules with custom overrides applied."""
+    from core.config_store import get_all_dq_rules
+    return get_all_dq_rules()
+
+
+@router.put("/config/dq-rules/{rule_id}")
+async def update_dq_rule(rule_id: str, body: DQRuleUpdate):
+    """Update a DQ rule (name, description, threshold, severity, enabled)."""
+    from core.config_store import update_dq_rule as _update
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    result = _update(rule_id, updates)
+    if result is None:
+        raise HTTPException(404, f"DQ rule {rule_id} not found")
+    return result
+
+
+@router.delete("/config/dq-rules/{rule_id}")
+async def reset_dq_rule(rule_id: str):
+    """Reset a DQ rule to its default."""
+    from core.config_store import reset_dq_rule as _reset
+    _reset(rule_id)
+    return {"status": "ok"}
+
+
+@router.post("/config/dq-rules/reset")
+async def reset_all_dq_rules():
+    """Reset all DQ rules to defaults."""
+    from core.config_store import reset_all_dq_rules as _reset_all
+    _reset_all()
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
