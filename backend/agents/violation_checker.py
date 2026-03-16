@@ -126,8 +126,43 @@ def run_violation_checks(job: Job, selected_violations: list[str] | None = None)
 
     total_violations = sum(v.count for v in violations if v.count > 0)
 
+    # --- Compute per-row violation counts and stamp onto AMMF DataFrame ---
+    total_ammf_rows = len(job.ammf_dataframe)
+    violation_counts_per_row = pd.Series(0, index=job.ammf_dataframe.index)
+
+    for rule_id, vdf in job.violation_dataframes.items():
+        if vdf.empty:
+            continue
+        # Match violation rows back to AMMF rows using index or key columns
+        if "CAID" in vdf.columns and "AcquirerMerchantID" in vdf.columns \
+                and "CAID" in job.ammf_dataframe.columns and "AcquirerMerchantID" in job.ammf_dataframe.columns:
+            # Build a set of (CAID, MID) pairs from violation rows
+            viol_keys = set(
+                zip(vdf["CAID"].astype(str), vdf["AcquirerMerchantID"].astype(str))
+            )
+            ammf_keys = list(zip(
+                job.ammf_dataframe["CAID"].astype(str),
+                job.ammf_dataframe["AcquirerMerchantID"].astype(str),
+            ))
+            for idx, key in enumerate(ammf_keys):
+                if key in viol_keys:
+                    violation_counts_per_row.iloc[idx] += 1
+
+    # Add Violations column to the AMMF DataFrame
+    job.ammf_dataframe["Violations"] = violation_counts_per_row.values
+
+    violated_rows = int((violation_counts_per_row > 0).sum())
+    clean_rows = total_ammf_rows - violated_rows
+
+    job.add_message(f"Summary: {clean_rows:,} clean rows, {violated_rows:,} rows with violations out of {total_ammf_rows:,} total")
+
     return ViolationReport(
         violations=violations,
         total_violations=total_violations,
         total_rows_affected=len(total_rows_affected),
+        rules_executed=len(rules_to_run),
+        rules_available=len(all_rules),
+        total_ammf_rows=total_ammf_rows,
+        clean_rows=clean_rows,
+        violated_rows=violated_rows,
     )

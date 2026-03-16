@@ -41,6 +41,40 @@ export default function ViolationsPage({ params }: { params: Promise<{ jobId: st
           Back to Dashboard
         </button>
       </div>
+      {/* Summary stats */}
+      {report.total_ammf_rows > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-visa-gray-200 p-4 text-center shadow-sm">
+            <p className="text-2xl font-bold text-visa-navy">{report.total_ammf_rows.toLocaleString()}</p>
+            <p className="text-xs text-visa-gray-500 mt-1">Total AMMF Records</p>
+          </div>
+          <div className="bg-white rounded-xl border border-green-200 p-4 text-center shadow-sm">
+            <p className="text-2xl font-bold text-green-600">{report.clean_rows.toLocaleString()}</p>
+            <p className="text-xs text-visa-gray-500 mt-1">Clean Records</p>
+            {report.total_ammf_rows > 0 && (
+              <div className="mt-2 w-full bg-visa-gray-100 rounded-full h-1.5">
+                <div
+                  className="bg-green-500 h-1.5 rounded-full"
+                  style={{ width: `${(report.clean_rows / report.total_ammf_rows) * 100}%` }}
+                />
+              </div>
+            )}
+          </div>
+          <div className="bg-white rounded-xl border border-red-200 p-4 text-center shadow-sm">
+            <p className="text-2xl font-bold text-visa-red">{report.violated_rows.toLocaleString()}</p>
+            <p className="text-xs text-visa-gray-500 mt-1">Records with Violations</p>
+            {report.total_ammf_rows > 0 && (
+              <div className="mt-2 w-full bg-visa-gray-100 rounded-full h-1.5">
+                <div
+                  className="bg-red-500 h-1.5 rounded-full"
+                  style={{ width: `${(report.violated_rows / report.total_ammf_rows) * 100}%` }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tip banner for web research */}
       {report.total_violations > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">

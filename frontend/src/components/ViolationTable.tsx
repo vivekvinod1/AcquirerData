@@ -41,7 +41,7 @@ export default function ViolationTable({ report, jobId, onViolationsUpdated }: V
         ))}
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border border-visa-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-visa-gray-50 border-b">
             <tr>
@@ -71,7 +71,14 @@ export default function ViolationTable({ report, jobId, onViolationsUpdated }: V
       {report.total_violations === 0 && (
         <div className="text-center py-8 bg-green-50 rounded-lg">
           <p className="text-green-600 font-semibold text-lg">No Violations Found</p>
-          <p className="text-green-500 text-sm">All 13 checks passed</p>
+          <p className="text-green-500 text-sm">
+            All {report.rules_executed || report.violations.length || 13} checks passed
+          </p>
+          {report.rules_executed > 0 && report.rules_available > report.rules_executed && (
+            <p className="text-visa-gray-400 text-xs mt-1">
+              {report.rules_available - report.rules_executed} rule{report.rules_available - report.rules_executed !== 1 ? "s were" : " was"} not selected and not executed
+            </p>
+          )}
         </div>
       )}
     </div>

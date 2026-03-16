@@ -1,12 +1,13 @@
 export const PIPELINE_STEPS = [
   { key: "uploaded", label: "Upload", icon: "1" },
   { key: "ingestion", label: "Ingestion", icon: "2" },
-  { key: "awaiting_approval", label: "Review", icon: "3" },
+  { key: "awaiting_approval", label: "Mapping Review", icon: "3" },
   { key: "relationships", label: "Relationships", icon: "4" },
   { key: "quality", label: "Data Quality", icon: "5" },
   { key: "query_generation", label: "Query Gen", icon: "6" },
-  { key: "executing", label: "Executing", icon: "7" },
-  { key: "validation", label: "Validation", icon: "8" },
+  { key: "awaiting_sql_approval", label: "SQL Review", icon: "7" },
+  { key: "executing", label: "Executing", icon: "8" },
+  { key: "validation", label: "Validation", icon: "9" },
   { key: "complete", label: "Complete", icon: "✓" },
 ] as const;
 

@@ -6,12 +6,13 @@ from datetime import datetime
 class PipelineStep(str, Enum):
     UPLOADED = "uploaded"
     INGESTION = "ingestion"                    # Phase 1: DQ on raw data + schema mapping
-    AWAITING_APPROVAL = "awaiting_approval"    # Paused for human review
+    AWAITING_APPROVAL = "awaiting_approval"    # Paused for human review of schema mapping
     SCHEMA_MAPPING = "schema_mapping"
     COMPLETENESS = "completeness"
     RELATIONSHIPS = "relationships"
     QUALITY = "quality"
     QUERY_GENERATION = "query_generation"
+    AWAITING_SQL_APPROVAL = "awaiting_sql_approval"  # Paused for human review of SQL
     EXECUTING = "executing"
     VALIDATION = "validation"
     COMPLETE = "complete"
@@ -109,6 +110,11 @@ class ViolationReport(BaseModel):
     violations: list[ViolationRecord]
     total_violations: int
     total_rows_affected: int
+    rules_executed: int = 0      # how many rules were actually run
+    rules_available: int = 0     # total rules available (including skipped)
+    total_ammf_rows: int = 0     # total rows in AMMF output
+    clean_rows: int = 0          # rows with zero violations
+    violated_rows: int = 0       # rows with at least one violation
 
 
 class CIBBINConfig(BaseModel):
@@ -144,6 +150,14 @@ class PipelineContinueRequest(BaseModel):
     job_id: str
     selected_violations: list[str] | None = None  # Which violation rules to run
     user_instructions: str | None = None  # Free-form notes for the SQL generation LLM
+    save_as_template: bool = False
+    template_name: str | None = None
+
+
+class SQLApprovalRequest(BaseModel):
+    """Resume pipeline after human approval of generated SQL."""
+    job_id: str
+    approved_sql: str | None = None  # If provided, overrides the generated SQL
     save_as_template: bool = False
     template_name: str | None = None
 

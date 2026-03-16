@@ -69,6 +69,8 @@ class LLMClient:
         self.model = settings.claude_model
         self._call_counter = 0
         self._active_log_list = None
+        # Global log captures ALL calls (pipeline + chat + config routes)
+        self._global_log_list: list[LLMCallLog] = []
 
     def bind_job(self, job):
         """Bind to a job - resets job's logs for fresh run."""
@@ -78,6 +80,10 @@ class LLMClient:
 
     def unbind_job(self):
         self._active_log_list = None
+
+    def get_global_logs(self) -> list:
+        """Return all LLM calls ever made (across all jobs and non-job contexts)."""
+        return self._global_log_list
 
     def _compute_cost(self, input_tokens, output_tokens):
         pricing = PRICING.get(self.model, DEFAULT_PRICING)
@@ -89,6 +95,8 @@ class LLMClient:
         log.model = self.model
         if self._active_log_list is not None:
             self._active_log_list.append(log)
+        # Always capture in global list
+        self._global_log_list.append(log)
         return log
 
     def structured_query(self, system_prompt, user_prompt, output_schema, label=None):

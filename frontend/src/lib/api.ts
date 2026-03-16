@@ -16,6 +16,7 @@ import type {
   ViolationRuleInfo,
   JobSummary,
   MappingTemplateSummary,
+  MappingTemplateDetail,
   TemplateMatch,
 } from "./types";
 
@@ -195,6 +196,23 @@ export async function continuePipeline(
       job_id: jobId,
       selected_violations: selectedViolations,
       user_instructions: userInstructions || null,
+      save_as_template: saveAsTemplate || false,
+      template_name: templateName || null,
+    }),
+  });
+}
+
+export async function approveSql(
+  jobId: string,
+  approvedSql?: string,
+  saveAsTemplate?: boolean,
+  templateName?: string
+) {
+  return fetchAPI("/pipeline/approve-sql", {
+    method: "POST",
+    body: JSON.stringify({
+      job_id: jobId,
+      approved_sql: approvedSql || null,
       save_as_template: saveAsTemplate || false,
       template_name: templateName || null,
     }),
@@ -445,6 +463,10 @@ export async function generateResolutionStrategy(
 
 export async function getMappingTemplates(): Promise<MappingTemplateSummary[]> {
   return fetchAPI<MappingTemplateSummary[]>("/config/mapping-templates");
+}
+
+export async function getMappingTemplateDetail(fingerprint: string): Promise<MappingTemplateDetail> {
+  return fetchAPI<MappingTemplateDetail>(`/config/mapping-templates/${fingerprint}`);
 }
 
 export async function deleteMappingTemplate(fingerprint: string) {

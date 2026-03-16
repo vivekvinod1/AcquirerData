@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import PipelineStepper from "@/components/PipelineStepper";
+import PipelineActivityPanel from "@/components/PipelineActivityPanel";
 import IngestionReview from "@/components/IngestionReview";
+import SQLReview from "@/components/SQLReview";
 import ChatPanel from "@/components/ChatPanel";
 import ViolationRuleSelector from "@/components/ViolationRuleSelector";
 import { getPipelineStatus, runPipeline, getViolationRules, checkTemplateMatch } from "@/lib/api";
@@ -69,7 +71,8 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
         s &&
         (s.step === "complete" ||
           s.step === "error" ||
-          s.step === "awaiting_approval")
+          s.step === "awaiting_approval" ||
+          s.step === "awaiting_sql_approval")
       ) {
         setRunning(false);
         clearInterval(interval);
@@ -117,10 +120,17 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
     // IngestionReview calls continuePipeline() itself; we just need to resume polling
   };
 
+  /** Called when user approves SQL & continues to execution */
+  const handleSQLApprove = () => {
+    setRunning(true);
+    // SQLReview calls approveSql() itself; we just need to resume polling
+  };
+
   const step = status?.step || "uploaded";
   const isComplete = step === "complete";
   const isError = step === "error";
   const isAwaitingApproval = step === "awaiting_approval";
+  const isAwaitingSQLApproval = step === "awaiting_sql_approval";
 
   return (
     <div className="space-y-8">
@@ -140,13 +150,28 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
             Awaiting Review
           </span>
         )}
+        {isAwaitingSQLApproval && (
+          <span className="px-4 py-2 bg-blue-100 text-blue-800 rounded-full font-semibold text-sm">
+            Awaiting SQL Review
+          </span>
+        )}
       </div>
 
       <PipelineStepper currentStep={step} progressPct={status?.progress_pct || 0} />
 
+      {/* ── Animated Activity Panel: Shown during active processing ── */}
+      {running && status?.messages && (
+        <PipelineActivityPanel currentStep={step} messages={status.messages} />
+      )}
+
       {/* ── Awaiting Approval: Show Ingestion Review ── */}
       {isAwaitingApproval && !running && (
         <IngestionReview jobId={jobId} onContinue={handleContinue} />
+      )}
+
+      {/* ── Awaiting SQL Approval: Show SQL Review ── */}
+      {isAwaitingSQLApproval && !running && (
+        <SQLReview jobId={jobId} onContinue={handleSQLApprove} />
       )}
 
       {/* ── Initial Upload State: Step Selector + Config ── */}
@@ -301,7 +326,7 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
       )}
 
       {/* Navigation cards — show after ingestion or when progress is past 25% */}
-      {(isComplete || isAwaitingApproval || (status?.progress_pct ?? 0) > 25) && (
+      {(isComplete || isAwaitingApproval || isAwaitingSQLApproval || (status?.progress_pct ?? 0) > 25) && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <button onClick={() => router.push(`/pipeline/${jobId}/schema`)}
             className="p-4 bg-white rounded-lg shadow-sm border border-visa-gray-200 hover:border-visa-gold text-left transition">
@@ -331,11 +356,6 @@ export default function PipelineDashboard({ params }: { params: Promise<{ jobId:
             className="p-4 bg-white rounded-lg shadow-sm border border-visa-gray-200 hover:border-visa-gold text-left transition disabled:opacity-50">
             <div className="text-sm font-semibold text-visa-navy">AMMF Output</div>
             <p className="text-xs text-visa-gray-500 mt-1">Preview & download</p>
-          </button>
-          <button onClick={() => router.push(`/pipeline/${jobId}/llm-logs`)}
-            className="p-4 bg-white rounded-lg shadow-sm border border-visa-gold hover:bg-visa-light-gold text-left transition">
-            <div className="text-sm font-semibold text-visa-gold">LLM Control Panel</div>
-            <p className="text-xs text-visa-gray-500 mt-1">Calls, tokens, costs</p>
           </button>
         </div>
       )}

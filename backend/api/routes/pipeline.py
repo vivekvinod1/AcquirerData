@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from core.job_store import job_store
-from core.models import PipelineStatus, PipelineRunRequest, PipelineContinueRequest, PipelineStep, JobSummary
+from core.models import PipelineStatus, PipelineRunRequest, PipelineContinueRequest, SQLApprovalRequest, PipelineStep, JobSummary
 import pandas as pd
 import re
 
@@ -79,6 +79,52 @@ async def continue_pipeline(request: PipelineContinueRequest, background_tasks: 
     background_tasks.add_task(run_pipeline_phase2, job)
 
     return {"job_id": job.job_id, "status": "continuing"}
+
+
+@router.post("/pipeline/approve-sql")
+async def approve_sql(request: SQLApprovalRequest, background_tasks: BackgroundTasks):
+    """Resume pipeline after human approval (and optional edit) of the generated SQL."""
+    job = job_store.get_job(request.job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    if job.step != PipelineStep.AWAITING_SQL_APPROVAL:
+        raise HTTPException(400, f"Job not in awaiting_sql_approval state (current: {job.step})")
+
+    # If user edited the SQL, use their version
+    if request.approved_sql and request.approved_sql.strip():
+        job.generated_sql = request.approved_sql.strip()
+        job.add_message("SQL was edited by reviewer before approval")
+
+    job.sql_approved = True
+    job.add_message("SQL approved — proceeding to execution")
+
+    # Save as template if requested
+    if request.save_as_template:
+        from core.config_store import compute_schema_fingerprint, save_mapping_template
+        if job.tables and job.schema_mapping:
+            fp = compute_schema_fingerprint(job.tables)
+            job.schema_fingerprint = fp
+            template_data = {
+                "fingerprint": fp,
+                "name": request.template_name or f"Template {fp[:8]}",
+                "created_at": __import__("datetime").datetime.now().isoformat(),
+                "table_summary": {
+                    name: sorted(str(c) for c in df.columns)
+                    for name, df in job.tables.items()
+                },
+                "schema_mapping": job.schema_mapping.model_dump(),
+                "user_instructions": getattr(job, "user_instructions", None),
+                "selected_violations": list(job.selected_violations) if job.selected_violations else None,
+                "generated_sql": job.generated_sql,
+            }
+            save_mapping_template(fp, template_data)
+            job.add_message(f"Saved mapping + SQL as template: '{template_data['name']}'")
+
+    from agents.orchestrator import run_pipeline_phase3
+    background_tasks.add_task(run_pipeline_phase3, job)
+
+    return {"job_id": job.job_id, "status": "executing"}
 
 
 @router.get("/pipeline/status/{job_id}", response_model=PipelineStatus)

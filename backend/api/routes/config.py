@@ -570,10 +570,10 @@ The SQL must:
 
 @router.get("/config/llm-stats")
 async def get_llm_stats():
-    """Return aggregate LLM usage stats across all live jobs."""
+    """Return aggregate LLM usage stats across all live jobs + non-job calls."""
     from core.job_store import job_store
+    from core.llm_client import llm_client
 
-    all_calls = []
     per_job = []
 
     for job_id, job in job_store._jobs.items():
@@ -593,7 +593,9 @@ async def get_llm_stats():
             "duration_ms": job_duration,
             "started_at": job.started_at,
         })
-        all_calls.extend(logs)
+
+    # Use global log list — captures ALL calls including chat, config routes, etc.
+    all_calls = llm_client.get_global_logs()
 
     # Per-label breakdown
     label_stats: dict[str, dict] = {}
@@ -651,9 +653,29 @@ async def get_mapping_templates():
             "table_summary": data.get("table_summary", {}),
             "has_user_instructions": bool(data.get("user_instructions")),
             "violation_count": len(data.get("selected_violations", []) or []),
+            "has_sql": bool(data.get("generated_sql")),
         })
     result.sort(key=lambda t: t["created_at"], reverse=True)
     return result
+
+
+@router.get("/config/mapping-templates/{fingerprint}")
+async def get_mapping_template_detail(fingerprint: str):
+    """Return full details of a single mapping template."""
+    from core.config_store import get_mapping_template
+    data = get_mapping_template(fingerprint)
+    if not data:
+        raise HTTPException(404, f"Template not found: {fingerprint[:16]}...")
+    return {
+        "fingerprint": fingerprint,
+        "name": data.get("name", f"Template {fingerprint[:8]}"),
+        "created_at": data.get("created_at", ""),
+        "table_summary": data.get("table_summary", {}),
+        "schema_mapping": data.get("schema_mapping"),
+        "user_instructions": data.get("user_instructions"),
+        "selected_violations": data.get("selected_violations", []),
+        "generated_sql": data.get("generated_sql"),
+    }
 
 
 @router.delete("/config/mapping-templates/{fingerprint}")

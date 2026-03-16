@@ -18,6 +18,7 @@ import {
   getLLMStats,
   generateViolationRule,
   getMappingTemplates,
+  getMappingTemplateDetail,
   deleteMappingTemplate,
   resetMappingTemplates,
   type DQRule,
@@ -28,7 +29,8 @@ import {
   type LLMStats,
   type GeneratedRule,
 } from "@/lib/api";
-import type { MappingTemplateSummary } from "@/lib/types";
+import type { MappingTemplateSummary, MappingTemplateDetail, SchemaMapping } from "@/lib/types";
+import SchemaMapEditor from "@/components/SchemaMapEditor";
 
 // ============================================================================
 // Shared Components
@@ -1488,12 +1490,198 @@ function PromptBlock({ label, content, isOutput }: { label: string; content: str
 // Mapping Templates Section
 // ============================================================================
 
+type TemplateDetailTab = "mapping" | "sql" | "instructions" | "violations";
+
+function TemplateDetailsPanel({ fingerprint }: { fingerprint: string }) {
+  const [detail, setDetail] = useState<MappingTemplateDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TemplateDetailTab>("mapping");
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    getMappingTemplateDetail(fingerprint)
+      .then((d) => setDetail(d))
+      .catch((e) => setError(`Failed to load details: ${e}`))
+      .finally(() => setLoading(false));
+  }, [fingerprint]);
+
+  if (loading) {
+    return (
+      <div className="py-6 text-center">
+        <svg className="animate-spin h-5 w-5 mx-auto text-visa-navy mb-2" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        <p className="text-xs text-visa-gray-500">Loading template details...</p>
+      </div>
+    );
+  }
+
+  if (error || !detail) {
+    return (
+      <div className="py-4 text-center text-sm text-red-600">
+        {error || "Template not found"}
+      </div>
+    );
+  }
+
+  const tabs: { key: TemplateDetailTab; label: string; badge?: string }[] = [
+    {
+      key: "mapping",
+      label: "Schema Mapping",
+      badge: detail.schema_mapping
+        ? `${detail.schema_mapping.mappings.filter((m) => m.source_column || m.is_derived).length}/${detail.schema_mapping.mappings.length}`
+        : undefined,
+    },
+    {
+      key: "sql",
+      label: "SQL Query",
+      badge: detail.generated_sql ? "Cached" : undefined,
+    },
+    {
+      key: "instructions",
+      label: "User Instructions",
+      badge: detail.user_instructions ? "Set" : undefined,
+    },
+    {
+      key: "violations",
+      label: "Violation Rules",
+      badge: detail.selected_violations?.length
+        ? `${detail.selected_violations.length}`
+        : undefined,
+    },
+  ];
+
+  return (
+    <div className="mt-4 border-t border-visa-gray-200 pt-4">
+      {/* Detail Tabs */}
+      <div className="flex gap-1 mb-3 flex-wrap">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
+              activeTab === tab.key
+                ? "bg-visa-navy text-white"
+                : "bg-visa-gray-100 text-visa-gray-600 hover:bg-visa-gray-200"
+            }`}
+          >
+            {tab.label}
+            {tab.badge && (
+              <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] ${
+                activeTab === tab.key
+                  ? "bg-white/20 text-white"
+                  : "bg-visa-gray-200 text-visa-gray-500"
+              }`}>
+                {tab.badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Schema Mapping */}
+      {activeTab === "mapping" && detail.schema_mapping && (
+        <SchemaMapEditor mapping={detail.schema_mapping} editable={false} />
+      )}
+      {activeTab === "mapping" && !detail.schema_mapping && (
+        <p className="text-sm text-visa-gray-500 py-4 text-center">No schema mapping data stored.</p>
+      )}
+
+      {/* SQL Query */}
+      {activeTab === "sql" && (
+        <div className="bg-visa-gray-50 rounded-lg p-4">
+          {detail.generated_sql ? (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h5 className="text-xs font-semibold text-visa-navy flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                  </svg>
+                  Cached AMMF Transformation SQL
+                </h5>
+                <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full border border-green-200">
+                  Reused on matching runs
+                </span>
+              </div>
+              <pre className="mt-2 p-4 bg-visa-gray-900 text-visa-gray-100 rounded-lg text-xs font-mono overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap">
+                {detail.generated_sql}
+              </pre>
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-sm text-visa-gray-500">
+                No SQL query cached yet.
+              </p>
+              <p className="text-xs text-visa-gray-400 mt-1">
+                SQL is automatically saved after the first successful pipeline run using this template.
+                Future runs with matching data will reuse this SQL, skipping the LLM query generation step.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* User Instructions */}
+      {activeTab === "instructions" && (
+        <div className="bg-visa-gray-50 rounded-lg p-4">
+          {detail.user_instructions ? (
+            <div>
+              <h5 className="text-xs font-semibold text-visa-navy mb-2 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                SQL Generation Notes
+              </h5>
+              <p className="text-sm text-visa-gray-700 whitespace-pre-wrap">{detail.user_instructions}</p>
+            </div>
+          ) : (
+            <p className="text-sm text-visa-gray-500 text-center py-2">
+              No user instructions were saved with this template.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Selected Violations */}
+      {activeTab === "violations" && (
+        <div className="bg-visa-gray-50 rounded-lg p-4">
+          {detail.selected_violations && detail.selected_violations.length > 0 ? (
+            <div>
+              <h5 className="text-xs font-semibold text-visa-navy mb-2">
+                {detail.selected_violations.length} violation rule{detail.selected_violations.length !== 1 ? "s" : ""} selected
+              </h5>
+              <div className="flex flex-wrap gap-1.5">
+                {detail.selected_violations.map((v) => (
+                  <span
+                    key={v}
+                    className="px-2 py-1 text-xs bg-white border border-visa-gray-200 rounded-lg text-visa-gray-700 font-medium"
+                  >
+                    {v}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-visa-gray-500 text-center py-2">
+              No violation rules were saved with this template.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MappingTemplatesSection({ onReload }: { onReload: () => void }) {
   const [templates, setTemplates] = useState<MappingTemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [expandedFp, setExpandedFp] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1599,7 +1787,12 @@ function MappingTemplatesSection({ onReload }: { onReload: () => void }) {
                 </div>
 
                 {/* Metadata badges */}
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {t.has_sql && (
+                    <span className="text-[10px] px-2 py-0.5 bg-green-50 text-green-700 rounded-full border border-green-200">
+                      Cached SQL
+                    </span>
+                  )}
                   {t.has_user_instructions && (
                     <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-100">
                       Has SQL instructions
@@ -1614,14 +1807,34 @@ function MappingTemplatesSection({ onReload }: { onReload: () => void }) {
               </div>
 
               {/* Actions */}
-              <button
-                onClick={() => handleDelete(t.fingerprint)}
-                disabled={deleting === t.fingerprint}
-                className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
-              >
-                {deleting === t.fingerprint ? "Deleting..." : "Delete"}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setExpandedFp(expandedFp === t.fingerprint ? null : t.fingerprint)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition flex items-center gap-1 ${
+                    expandedFp === t.fingerprint
+                      ? "bg-visa-navy text-white"
+                      : "bg-visa-gray-100 text-visa-gray-700 hover:bg-visa-gray-200"
+                  }`}
+                >
+                  Details
+                  <svg className={`w-3 h-3 transition-transform ${expandedFp === t.fingerprint ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleDelete(t.fingerprint)}
+                  disabled={deleting === t.fingerprint}
+                  className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
+                >
+                  {deleting === t.fingerprint ? "Deleting..." : "Delete"}
+                </button>
+              </div>
             </div>
+
+            {/* Expandable Details Panel */}
+            {expandedFp === t.fingerprint && (
+              <TemplateDetailsPanel fingerprint={t.fingerprint} />
+            )}
           </div>
         ))}
       </div>

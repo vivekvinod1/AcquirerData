@@ -106,84 +106,95 @@ export default function RemediationPanel({ jobId, violation, onFixApplied }: Pro
 
       {/* Table */}
       {data && data.rows.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-visa-gray-200">
-          <table className="w-full text-xs">
-            <thead className="bg-visa-gray-100 border-b border-visa-gray-200">
-              <tr>
-                <th className="p-2 text-left font-medium text-visa-gray-500 sticky left-0 bg-visa-gray-100 z-10">
-                  #
-                </th>
-                {displayColumns.map((col) => (
-                  <th
-                    key={col}
-                    className={`p-2 text-left font-medium whitespace-nowrap ${
-                      violation.affected_columns.includes(col)
-                        ? "text-visa-red font-bold"
-                        : "text-visa-gray-500"
-                    }`}
-                  >
-                    {col}
+        <>
+          <div className="overflow-x-auto rounded-lg border border-visa-gray-200">
+            <table className="w-full text-xs">
+              <thead className="bg-visa-gray-100 border-b border-visa-gray-200">
+                <tr>
+                  <th className="p-2 text-center font-medium text-visa-gray-500 whitespace-nowrap">
+                    #
                   </th>
-                ))}
-                <th className="p-2 text-center font-medium text-visa-gray-500 sticky right-0 bg-visa-gray-100 z-10">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-visa-gray-100">
-              {data.rows.map((row, idx) => {
-                const globalIdx = (page - 1) * PAGE_SIZE + idx;
-                const merchantName =
-                  String(row["DBAName"] || row["LegalName"] || row["MerchantName"] || "Unknown");
-                return (
-                  <tr key={idx} className="hover:bg-blue-50/30">
-                    <td className="p-2 text-visa-gray-400 sticky left-0 bg-white z-10">
-                      {globalIdx + 1}
-                    </td>
-                    {displayColumns.map((col) => {
-                      const val = row[col];
-                      const isAffected = violation.affected_columns.includes(col);
-                      const display = val === "" || val === null || val === undefined
-                        ? ""
-                        : String(val);
-                      const isEmpty = display === "";
-                      return (
-                        <td
-                          key={col}
-                          className={`p-2 max-w-48 truncate ${
-                            isAffected
-                              ? isEmpty
-                                ? "bg-red-50 text-red-400 italic"
-                                : "bg-amber-50/50 font-medium text-visa-navy"
-                              : "text-visa-gray-600"
-                          }`}
-                          title={display}
+                  <th className="p-2 text-center font-medium text-visa-gray-500 whitespace-nowrap">
+                    Action
+                  </th>
+                  {displayColumns.map((col) => (
+                    <th
+                      key={col}
+                      className={`p-2 text-left font-medium whitespace-nowrap ${
+                        violation.affected_columns.includes(col)
+                          ? "text-visa-red font-bold"
+                          : "text-visa-gray-500"
+                      }`}
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-visa-gray-100">
+                {data.rows.map((row, idx) => {
+                  const globalIdx = (page - 1) * PAGE_SIZE + idx;
+                  const merchantName =
+                    String(row["DBAName"] || row["LegalName"] || row["MerchantName"] || "Unknown");
+                  return (
+                    <tr key={idx} className="hover:bg-blue-50/30">
+                      <td className="p-2 text-visa-gray-400 text-center">
+                        {globalIdx + 1}
+                      </td>
+                      <td className="p-2 text-center">
+                        <button
+                          title="Research this merchant"
+                          onClick={() =>
+                            setResearchTarget({
+                              merchantName,
+                              context: `${violation.rule_id}: ${violation.description}. Affected columns: ${violation.affected_columns.join(", ")}`,
+                              columns: violation.affected_columns,
+                              rowIndex: globalIdx,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 transition whitespace-nowrap"
                         >
-                          {isEmpty && isAffected ? "(empty)" : display}
-                        </td>
-                      );
-                    })}
-                    <td className="p-2 text-center sticky right-0 bg-white z-10">
-                      <button
-                        onClick={() =>
-                          setResearchTarget({
-                            merchantName,
-                            context: `${violation.rule_id}: ${violation.description}. Affected columns: ${violation.affected_columns.join(", ")}`,
-                            columns: violation.affected_columns,
-                            rowIndex: globalIdx,
-                          })
-                        }
-                        className="px-2 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 transition whitespace-nowrap"
-                      >
-                        Research
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          Research
+                        </button>
+                      </td>
+                      {displayColumns.map((col) => {
+                        const val = row[col];
+                        const isAffected = violation.affected_columns.includes(col);
+                        const display = val === "" || val === null || val === undefined
+                          ? ""
+                          : String(val);
+                        const isEmpty = display === "";
+                        return (
+                          <td
+                            key={col}
+                            className={`p-2 max-w-48 truncate ${
+                              isAffected
+                                ? isEmpty
+                                  ? "bg-red-50 text-red-400 italic"
+                                  : "bg-amber-50/50 font-medium text-visa-navy"
+                                : "text-visa-gray-600"
+                            }`}
+                            title={display}
+                          >
+                            {isEmpty && isAffected ? "(empty)" : display}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {displayColumns.length > 6 && (
+            <p className="text-center text-xs text-visa-gray-400 mt-1">
+              ← Scroll horizontally to see more columns →
+            </p>
+          )}
+        </>
       )}
 
       {data && data.rows.length === 0 && !loading && (
@@ -243,7 +254,7 @@ function prioritizeColumns(allColumns: string[], affected: string[]): string[] {
   }
 
   // 3. Remaining columns (up to limit)
-  const MAX = 14;
+  const MAX = 10;
   for (const col of allColumns) {
     if (ordered.length >= MAX) break;
     if (!seen.has(col)) {

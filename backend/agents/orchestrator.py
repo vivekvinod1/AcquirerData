@@ -1,8 +1,9 @@
 """Pipeline orchestrator - sequences all agents and manages job state.
 
-Two-phase pipeline with human approval gate:
+Three-phase pipeline with two human approval gates:
   Phase 1 (Ingestion): DQ on raw data + Schema Mapping + Completeness → AWAITING_APPROVAL
-  Phase 2 (Transformation): Relationships → Quality → Query Gen → Execute → Violations
+  Phase 2 (Pre-execution): Relationships → Quality → Query Gen → AWAITING_SQL_APPROVAL
+  Phase 3 (Execution): Execute SQL → Violations
 """
 
 from datetime import datetime
@@ -55,9 +56,14 @@ async def run_ingestion_phase(job: Job):
                 if template.get("selected_violations") is not None:
                     job.selected_violations = template["selected_violations"]
                 job.template_applied = True
+                if template.get("generated_sql"):
+                    job.generated_sql = template["generated_sql"]
+                    job.template_has_sql = True
 
                 mapped_count = sum(1 for m in job.schema_mapping.mappings if m.source_column or m.is_derived)
                 job.add_message(f"Template applied: {mapped_count} of {len(job.schema_mapping.mappings)} columns mapped — skipping review")
+                if job.generated_sql:
+                    job.add_message("Reusing cached SQL query from template — skipping query generation")
 
                 # Run input DQ (still useful even with template)
                 job.set_step(PipelineStep.INGESTION, 5)
@@ -73,11 +79,16 @@ async def run_ingestion_phase(job: Job):
                 if completeness["missing_required"]:
                     job.add_message(f"WARNING: Missing required fields: {completeness['missing_required']}")
 
-                # Skip straight to phase 2
+                # Skip straight to phase 2 (or phase 3 if template has SQL)
                 job.set_step(PipelineStep.INGESTION, 20)
-                job.add_message("Auto-approved via saved template — proceeding to transformation")
                 job.schema_approved = True
-                await run_pipeline_phase2(job)
+                if job.generated_sql and getattr(job, "template_has_sql", False):
+                    job.add_message("Auto-approved via saved template (with cached SQL) — skipping both review gates")
+                    job.sql_approved = True
+                    await run_pipeline_phase3(job)
+                else:
+                    job.add_message("Auto-approved via saved template — proceeding to transformation")
+                    await run_pipeline_phase2(job)
                 return
 
         # Step A: Input Data Quality (on raw uploaded tables)
@@ -118,8 +129,8 @@ async def run_ingestion_phase(job: Job):
 
 
 async def run_pipeline_phase2(job: Job):
-    """Phase 2: Run remaining pipeline steps after human approval.
-    Relationships → Quality → Query Gen → Execute → Violations (filtered)."""
+    """Phase 2: Relationships → Quality → Query Gen → pause at AWAITING_SQL_APPROVAL.
+    After SQL is approved, run_pipeline_phase3() handles execution."""
     from core.llm_client import llm_client
     llm_client.bind_job(job)
 
@@ -127,10 +138,8 @@ async def run_pipeline_phase2(job: Job):
         run_relationships = _should_run(job, "relationships")
         run_quality = _should_run(job, "quality")
         run_query = _should_run(job, "query_generation")
-        run_execute = _should_run(job, "executing")
-        run_validation = _should_run(job, "validation")
 
-        # Check for validation-only mode
+        # Check for validation-only mode (skip SQL gate)
         only_validation = (job.selected_steps is not None
                            and "validation" in job.selected_steps
                            and not run_query)
@@ -157,8 +166,11 @@ async def run_pipeline_phase2(job: Job):
         else:
             job.add_message("Skipping data quality analysis")
 
-        # Step 5: Query Generation
-        if run_query:
+        # Step 5: Query Generation (skip if template already provided SQL)
+        if run_query and job.generated_sql and getattr(job, "template_has_sql", False):
+            job.set_step(PipelineStep.QUERY_GENERATION, 65)
+            job.add_message("Using cached SQL from saved template (skipping LLM query generation)")
+        elif run_query:
             job.set_step(PipelineStep.QUERY_GENERATION, 65)
             job.add_message("Generating transformation query...")
             from agents.query_generator import run_query_generation
@@ -166,6 +178,41 @@ async def run_pipeline_phase2(job: Job):
             job.add_message("SQL query generated")
         else:
             job.add_message("Skipping query generation")
+
+        # If validation-only mode (no SQL), skip straight to phase 3
+        if only_validation:
+            await run_pipeline_phase3(job)
+            return
+
+        # Pause for SQL review (if we have SQL to review)
+        if job.generated_sql:
+            job.set_step(PipelineStep.AWAITING_SQL_APPROVAL, 68)
+            job.add_message("SQL generated — awaiting human review before execution.")
+        else:
+            # No SQL generated (steps were skipped) — go to phase 3
+            await run_pipeline_phase3(job)
+
+    except Exception as e:
+        job.set_step(PipelineStep.ERROR, job.progress_pct)
+        job.error = str(e)
+        job.add_message(f"ERROR: {e}")
+        raise
+
+
+async def run_pipeline_phase3(job: Job):
+    """Phase 3: Execute approved SQL → Violations.
+    Called after SQL is approved (or directly for validation-only mode)."""
+    from core.llm_client import llm_client
+    llm_client.bind_job(job)
+
+    try:
+        run_execute = _should_run(job, "executing")
+        run_validation = _should_run(job, "validation")
+
+        # Check for validation-only mode
+        only_validation = (job.selected_steps is not None
+                           and "validation" in job.selected_steps
+                           and not _should_run(job, "query_generation"))
 
         # Step 6: Execute Query
         if run_execute and job.generated_sql:
@@ -193,6 +240,18 @@ async def run_pipeline_phase2(job: Job):
             job.add_message(f"Violation check complete: {job.violation_report.total_violations} violations found")
         else:
             job.add_message("Skipping violation checks")
+
+        # Backfill generated SQL into saved template (if one exists for this fingerprint)
+        if job.generated_sql and job.schema_fingerprint:
+            try:
+                from core.config_store import get_mapping_template, save_mapping_template
+                existing_template = get_mapping_template(job.schema_fingerprint)
+                if existing_template and not existing_template.get("generated_sql"):
+                    existing_template["generated_sql"] = job.generated_sql
+                    save_mapping_template(job.schema_fingerprint, existing_template)
+                    job.add_message("Saved generated SQL to mapping template for future reuse")
+            except Exception:
+                pass  # non-critical — don't fail the pipeline
 
         # Done
         job.set_step(PipelineStep.COMPLETE, 100)

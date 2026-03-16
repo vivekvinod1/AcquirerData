@@ -92,6 +92,11 @@ export interface ViolationReport {
   violations: ViolationRecord[];
   total_violations: number;
   total_rows_affected: number;
+  rules_executed: number;
+  rules_available: number;
+  total_ammf_rows: number;
+  clean_rows: number;
+  violated_rows: number;
 }
 
 export interface AMMFPreview {
@@ -228,6 +233,18 @@ export interface MappingTemplateSummary {
   table_summary: Record<string, string[]>;
   has_user_instructions: boolean;
   violation_count: number | null;
+  has_sql: boolean;
+}
+
+export interface MappingTemplateDetail {
+  fingerprint: string;
+  name: string;
+  created_at: string;
+  table_summary: Record<string, string[]>;
+  schema_mapping: SchemaMapping | null;
+  user_instructions: string | null;
+  selected_violations: string[] | null;
+  generated_sql: string | null;
 }
 
 export interface TemplateMatch {
