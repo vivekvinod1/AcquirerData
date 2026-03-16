@@ -321,7 +321,7 @@ export default function SchemaMapEditor({
                       {/* Confidence */}
                       <td className="p-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}>
-                          {badge.label} ({(m.confidence * 100).toFixed(0)}%)
+                          {badge.label}
                         </span>
                       </td>
 
